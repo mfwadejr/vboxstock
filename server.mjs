@@ -1,14 +1,17 @@
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, readdir, writeFile, copyFile, unlink } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { backup, DatabaseSync } from "node:sqlite";
 
 const port = Number(process.env.PORT || 3000);
 const dataDir = process.env.DATA_DIR || "/data";
+const databasePath = join(dataDir, "stockroom.db");
+const backupDir = join(dataDir, "backups");
 const publicDir = join(import.meta.dirname, "public");
 mkdirSync(dataDir, { recursive: true });
-const db = new DatabaseSync(join(dataDir, "stockroom.db"));
+mkdirSync(backupDir, { recursive: true });
+const db = new DatabaseSync(databasePath);
 db.exec(`
   PRAGMA journal_mode=WAL;
   PRAGMA foreign_keys=ON;
@@ -83,6 +86,12 @@ const allowedConditions = new Set(["New", "Used", "Refurbished"]);
 
 function json(res, status, value) { const body = JSON.stringify(value); res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(body) }); res.end(body); }
 async function body(req) { let raw = ""; for await (const chunk of req) { raw += chunk; if (raw.length > 1_000_000) throw new Error("Request too large"); } return raw ? JSON.parse(raw) : {}; }
+async function rawBody(req) { const chunks=[]; let size=0; for await(const chunk of req){size+=chunk.length;if(size>100_000_000)throw new Error("Backup file is too large");chunks.push(chunk);}return Buffer.concat(chunks); }
+const backupName = (prefix="stockroom") => `${prefix}-${new Date().toISOString().replace(/[:.]/g,"-")}.db`;
+async function createBackup(prefix) { const name=backupName(prefix), path=join(backupDir,name); await backup(db,path); return name; }
+function safeBackup(name) { if(!/^[a-zA-Z0-9._-]+\.db$/.test(name)) throw new Error("Invalid backup name"); return join(backupDir,name); }
+function validateBackup(path) { const candidate=new DatabaseSync(path,{readOnly:true}); try { const tables=new Set(candidate.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name)); if(!tables.has("products")||!tables.has("customers"))throw new Error("This is not a valid Stockroom database."); candidate.prepare("PRAGMA integrity_check").get(); } finally { candidate.close(); } }
+async function restoreFrom(path,res) { validateBackup(path); await createBackup("pre-restore"); db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); db.close(); await copyFile(path,databasePath); await unlink(`${databasePath}-wal`).catch(()=>{}); await unlink(`${databasePath}-shm`).catch(()=>{}); json(res,200,{ok:true,restarting:true}); setTimeout(()=>process.exit(0),250); }
 function productInput(value) {
   const model = String(value.model || ""); const condition = String(value.condition || "");
   if (!allowedModels.has(model) || !allowedConditions.has(condition) || !value.receivedAt) throw new Error("Model, condition, and received date are required.");
@@ -91,6 +100,17 @@ function productInput(value) {
 
 async function api(req, res, url) {
   if (url.pathname === "/api/health") return json(res, 200, { ok:true });
+  if (url.pathname === "/api/admin/backups" && req.method === "GET") {
+    const files=await readdir(backupDir,{withFileTypes:true}), result=[]; for(const file of files){if(file.isFile()&&file.name.endsWith(".db")){const info=await stat(join(backupDir,file.name));result.push({name:file.name,size:info.size,createdAt:info.mtime.toISOString()});}}
+    return json(res,200,result.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)));
+  }
+  if (url.pathname === "/api/admin/backups" && req.method === "POST") return json(res,201,{name:await createBackup("stockroom")});
+  if (url.pathname === "/api/admin/restore-upload" && req.method === "POST") { const path=join(backupDir,`upload-${crypto.randomUUID()}.db`); await writeFile(path,await rawBody(req)); return await restoreFrom(path,res); }
+  const adminMatch=url.pathname.match(/^\/api\/admin\/backups\/([^/]+)\/(download|restore)$/);
+  if(adminMatch){const name=decodeURIComponent(adminMatch[1]),action=adminMatch[2],path=safeBackup(name);await stat(path);
+    if(action==="download"&&req.method==="GET"){const content=await readFile(path);res.writeHead(200,{"content-type":"application/vnd.sqlite3","content-disposition":`attachment; filename="${name}"`,"content-length":content.length});return res.end(content);}
+    if(action==="restore"&&req.method==="POST")return await restoreFrom(path,res);
+  }
   if (url.pathname === "/api/products" && req.method === "GET") return json(res, 200, list.all());
   if (url.pathname === "/api/products" && req.method === "POST") {
     const p = productInput(await body(req)); const id = crypto.randomUUID();
