@@ -4,7 +4,7 @@ const PAGE_SIZE = 10;
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const today = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (v) => v ? new Date(`${v}T12:00:00`).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—";
-const fmtDateTime = (v) => v ? new Date(`${v.replace(" ","T")}Z`).toLocaleString("en-US", { year:"numeric", month:"short", day:"numeric", hour:"numeric", minute:"2-digit" }) : "—";
+const fmtDateTime = (v) => v ? new Date(v.includes("T")?v:`${v.replace(" ","T")}Z`).toLocaleString("en-US", { year:"numeric", month:"short", day:"numeric", hour:"numeric", minute:"2-digit" }) : "—";
 const esc = (v = "") => String(v).replace(/[&<>'"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" })[c]);
 const ids = p => [["UID",p.uid],["SN",p.sn],["MAC",p.mac]].filter(([,v]) => v);
 const primaryId = p => ids(p)[0]?.[1] || "No identifier";
@@ -46,6 +46,8 @@ function render() {
   $("#revenue").textContent=monthSales.length?`${money.format(monthSales.reduce((n,p)=>n+Number(p.salePrice||0),0))} in sales`:"No sales recorded";
   $("#availableBadge").textContent=available.length; $("#soldBadge").textContent=sold.length; $("#customerBadge").textContent=customers().length;
   document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===state.tab));
+  if(state.tab==="admin") { $(".table-wrap").hidden=true; $("#adminPanel").hidden=false; $("#pagination").innerHTML=""; renderAdmin(); return; }
+  $(".table-wrap").hidden=false; $("#adminPanel").hidden=true;
   const all=filtered(), pages=Math.max(1,Math.ceil(all.length/PAGE_SIZE)); state.page=Math.min(state.page,pages);
   const start=(state.page-1)*PAGE_SIZE, rows=all.slice(start,start+PAGE_SIZE);
   $("#thead").innerHTML=state.tab==="available"?"<tr><th>Product</th><th>UID / SN / MAC</th><th>Received</th><th>Cost</th><th>Status</th><th></th></tr>":state.tab==="customers"?"<tr><th>Customer</th><th>Phone</th><th>Purchases</th><th>Last purchase</th><th>Total spent</th><th></th></tr>":"<tr><th>Product</th><th>Customer</th><th>UID / SN / MAC</th><th>Sold</th><th>Payment</th><th>Sale price</th><th></th></tr>";
@@ -84,6 +86,15 @@ async function viewCustomer(p) {
 function restockForm(p){ openModal(`<h2>Void sale & restock</h2><p>Return ${esc(p.model)} to inventory.</p><form id="restockForm"><label>Condition<select name="condition"><option>Used</option><option>Refurbished</option><option>New</option></select></label><label>Return date<input name="receivedAt" type="date" value="${today()}" required></label><div class="form-actions"><button type="button" class="secondary" data-cancel>Cancel</button><button class="primary">Restock product</button></div></form>`); $("[data-cancel]").onclick=closeModal; $("#restockForm").onsubmit=e=>submitForm(e,`/api/products/${encodeURIComponent(p.id)}/restock`,"Product restocked."); }
 
 async function load(){ state.products=await api("/api/products"); render(); }
+async function renderAdmin(){
+  const panel=$("#adminPanel"); panel.innerHTML='<div class="admin-loading">Loading backups…</div>';
+  try{const backups=await api("/api/admin/backups");panel.innerHTML=`<div class="admin-page"><div><h2>Database backups</h2><p>Create snapshots inside the persistent <code>/data/backups</code> folder, download an off-server copy, or restore a previous database.</p></div><div class="admin-actions"><button class="primary" id="createBackup">Create backup now</button><label class="upload-backup">Restore uploaded backup<input id="restoreUpload" type="file" accept=".db,application/vnd.sqlite3"></label></div><div class="backup-warning"><strong>Restore replaces the active database.</strong> The app automatically creates a pre-restore backup and restarts the container.</div><div class="backup-list">${backups.length?backups.map(b=>`<article><div><strong>${esc(b.name)}</strong><small>${fmtDateTime(b.createdAt)} · ${(b.size/1024).toFixed(1)} KB</small></div><div><a class="button secondary" href="/api/admin/backups/${encodeURIComponent(b.name)}/download">Download</a><button class="secondary" data-restore-backup="${esc(b.name)}">Restore</button></div></article>`).join(""):"<p>No local backups yet.</p>"}</div></div>`;
+    $("#createBackup").onclick=async()=>{try{await api("/api/admin/backups",{method:"POST",body:"{}"});toast("Database backup created.");renderAdmin();}catch(e){toast(e.message);}};
+    $("#restoreUpload").onchange=async e=>{const file=e.target.files[0];if(!file||!confirm(`Restore ${file.name}? Current data will be replaced and the container will restart.`))return;await restoreUpload(file);};
+    document.querySelectorAll("[data-restore-backup]").forEach(b=>b.onclick=async()=>{if(!confirm(`Restore ${b.dataset.restoreBackup}? Current data will be replaced and the container will restart.`))return;try{storageStatus("saving","Restoring database");await api(`/api/admin/backups/${encodeURIComponent(b.dataset.restoreBackup)}/restore`,{method:"POST",body:"{}"});panel.innerHTML='<div class="restart-message"><h2>Restore complete</h2><p>The container is restarting. Refresh this page in a few seconds.</p></div>';}catch(e){toast(e.message);}});
+  }catch(e){panel.innerHTML=`<div class="restart-message"><h2>Unable to load backups</h2><p>${esc(e.message)}</p></div>`;}
+}
+async function restoreUpload(file){const panel=$("#adminPanel");try{storageStatus("saving","Restoring database");const response=await fetch("/api/admin/restore-upload",{method:"POST",headers:{"content-type":"application/octet-stream"},body:file});const data=await response.json();if(!response.ok)throw new Error(data.error||"Restore failed");panel.innerHTML='<div class="restart-message"><h2>Restore complete</h2><p>The container is restarting. Refresh this page in a few seconds.</p></div>';}catch(e){storageStatus("critical","Database error");toast(e.message);}}
 document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.page=1;render();});
 $("#search").oninput=e=>{state.query=e.target.value;state.page=1;render();};
 $("[data-open=receive]").onclick=receiveForm; $("[data-open=sell]").onclick=()=>sellForm();
