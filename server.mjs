@@ -111,6 +111,8 @@ async function api(req, res, url) {
     if(action==="download"&&req.method==="GET"){const content=await readFile(path);res.writeHead(200,{"content-type":"application/vnd.sqlite3","content-disposition":`attachment; filename="${name}"`,"content-length":content.length});return res.end(content);}
     if(action==="restore"&&req.method==="POST")return await restoreFrom(path,res);
   }
+  const deleteBackupMatch=url.pathname.match(/^\/api\/admin\/backups\/([^/]+)$/);
+  if(deleteBackupMatch&&req.method==="DELETE"){const path=safeBackup(decodeURIComponent(deleteBackupMatch[1]));await unlink(path);res.writeHead(204);return res.end();}
   if (url.pathname === "/api/products" && req.method === "GET") return json(res, 200, list.all());
   if (url.pathname === "/api/products" && req.method === "POST") {
     const p = productInput(await body(req)); const id = crypto.randomUUID();
