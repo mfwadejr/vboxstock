@@ -3,188 +3,107 @@ import { readFile, stat, readdir, writeFile, copyFile, unlink } from "node:fs/pr
 import { mkdirSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
+import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
 
-const port = Number(process.env.PORT || 3000);
-const dataDir = process.env.DATA_DIR || "/data";
-const databasePath = join(dataDir, "stockroom.db");
-const backupDir = join(dataDir, "backups");
-const publicDir = join(import.meta.dirname, "public");
-mkdirSync(dataDir, { recursive: true });
-mkdirSync(backupDir, { recursive: true });
-const db = new DatabaseSync(databasePath);
-db.exec(`
-  PRAGMA journal_mode=WAL;
-  PRAGMA foreign_keys=ON;
-  CREATE TABLE IF NOT EXISTS products (
-    id TEXT PRIMARY KEY, uid TEXT NOT NULL DEFAULT '', sn TEXT NOT NULL DEFAULT '', mac TEXT NOT NULL DEFAULT '',
-    manufacturer TEXT NOT NULL DEFAULT 'vSeeBox' CHECK(manufacturer='vSeeBox'),
-    model TEXT NOT NULL CHECK(model IN ('V3 Plus','V6 Plus','V6 Pro','V5 Pro')),
-    condition TEXT NOT NULL CHECK(condition IN ('New','Used','Refurbished')),
-    received_at TEXT NOT NULL, cost REAL NOT NULL DEFAULT 0, notes TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold')),
-    sold_at TEXT, customer_name TEXT, phone TEXT, sale_price REAL
-  );
-  CREATE TABLE IF NOT EXISTS customers (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '',
-    address1 TEXT NOT NULL DEFAULT '', address2 TEXT NOT NULL DEFAULT '', city TEXT NOT NULL DEFAULT '',
-    state TEXT NOT NULL DEFAULT '', zip TEXT NOT NULL DEFAULT '', shipping_notes TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS customer_notes (
-    id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'General', note TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_products_status ON products(status);
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_products_uid ON products(uid) WHERE uid != '';
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sn ON products(sn) WHERE sn != '';
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_products_mac ON products(mac) WHERE mac != '';
-  CREATE INDEX IF NOT EXISTS idx_customer_notes_customer_id ON customer_notes(customer_id);
-`);
+const port=Number(process.env.PORT||3000),dataDir=process.env.DATA_DIR||"/data";
+const databasePath=join(dataDir,"stockroom.db"),backupDir=join(dataDir,"backups"),restoreMarker=join(dataDir,".restore-audit.json"),publicDir=join(import.meta.dirname,"public");
+const SESSION_IDLE_MS=12*60*60*1000,sessions=new Map(),loginFailures=new Map();
+mkdirSync(dataDir,{recursive:true});mkdirSync(backupDir,{recursive:true});
+let db=new DatabaseSync(databasePath);
 
-const productColumnNames = new Set(db.prepare("PRAGMA table_info(products)").all().map((column) => column.name));
-for (const [name, definition] of [
-  ["customer_id", "TEXT"], ["ship_address1", "TEXT NOT NULL DEFAULT ''"], ["ship_address2", "TEXT NOT NULL DEFAULT ''"],
-  ["ship_city", "TEXT NOT NULL DEFAULT ''"], ["ship_state", "TEXT NOT NULL DEFAULT ''"], ["ship_zip", "TEXT NOT NULL DEFAULT ''"],
-  ["shipping_notes", "TEXT NOT NULL DEFAULT ''"], ["payment_method", "TEXT NOT NULL DEFAULT ''"],
-  ["payment_reference", "TEXT NOT NULL DEFAULT ''"], ["sale_notes", "TEXT NOT NULL DEFAULT ''"]
-]) if (!productColumnNames.has(name)) db.exec(`ALTER TABLE products ADD COLUMN ${name} ${definition}`);
-db.exec("CREATE INDEX IF NOT EXISTS idx_products_customer_id ON products(customer_id)");
-
-const seed = [
-  ["Logan Crabtree","273D000000021255","A0:BB:3E:02:12:55"], ["Marvin Wade","273D00000002194E","A0:BB:3E:02:19:4E"],
-  ["Logan Crabtree","273D00000002185F","A0:BB:3E:02:18:5F"], ["Logan Crabtree","273D00000002193A","A0:BB:3E:02:19:3A"],
-  ["Mark Milburn","273D0000000218BD","A0:BB:3E:02:18:BD"], ["Matt Avila","273D0000000219D5","A0:BB:3E:02:19:D5"],
-  ["Andy Nguyen","273D0000000219FD","A0:BB:3E:02:19:FD"], ["Andy Nguyen","273D000000021181","A0:BB:3E:02:11:81"],
-  ["Daniel Wade","273D00000002125A","A0:BB:3E:02:12:5A"], ["Marvin Wade","273D0000000219D4","A0:BB:3E:02:19:D4"]
-];
-if (db.prepare("SELECT COUNT(*) AS count FROM products").get().count === 0) {
-  const insert = db.prepare("INSERT INTO products (id,uid,sn,mac,model,condition,received_at,status,sold_at,customer_name) VALUES (?,?,?,?,?,?,?,?,?,?)");
-  db.exec("BEGIN");
-  try { seed.forEach(([name, sn, mac]) => insert.run(crypto.randomUUID(), "", sn, mac, "V3 Plus", "New", "2024-08-20", "sold", "2024-08-20", name)); db.exec("COMMIT"); }
-  catch (error) { db.exec("ROLLBACK"); throw error; }
+function initializeDatabase(){
+ db.exec(`
+ PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
+ CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY,uid TEXT NOT NULL DEFAULT '',sn TEXT NOT NULL DEFAULT '',mac TEXT NOT NULL DEFAULT '',manufacturer TEXT NOT NULL DEFAULT 'vSeeBox' CHECK(manufacturer='vSeeBox'),model TEXT NOT NULL CHECK(model IN ('V3 Plus','V6 Plus','V6 Pro','V5 Pro')),condition TEXT NOT NULL CHECK(condition IN ('New','Used','Refurbished')),received_at TEXT NOT NULL,cost REAL NOT NULL DEFAULT 0,notes TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','sold')),sold_at TEXT,customer_name TEXT,phone TEXT,sale_price REAL);
+ CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT NOT NULL DEFAULT '',address1 TEXT NOT NULL DEFAULT '',address2 TEXT NOT NULL DEFAULT '',city TEXT NOT NULL DEFAULT '',state TEXT NOT NULL DEFAULT '',zip TEXT NOT NULL DEFAULT '',shipping_notes TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+ CREATE TABLE IF NOT EXISTS customer_notes (id TEXT PRIMARY KEY,customer_id TEXT NOT NULL,category TEXT NOT NULL DEFAULT 'General',note TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE);
+ CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY,username TEXT NOT NULL COLLATE NOCASE UNIQUE,password_hash TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('admin','readonly')),enabled INTEGER NOT NULL DEFAULT 1,must_change_password INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,last_login_at TEXT);
+ CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT,username TEXT NOT NULL DEFAULT 'system',action TEXT NOT NULL,target TEXT NOT NULL DEFAULT '',details TEXT NOT NULL DEFAULT '',ip_address TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+ CREATE INDEX IF NOT EXISTS idx_products_status ON products(status); CREATE UNIQUE INDEX IF NOT EXISTS idx_products_uid ON products(uid) WHERE uid!=''; CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sn ON products(sn) WHERE sn!=''; CREATE UNIQUE INDEX IF NOT EXISTS idx_products_mac ON products(mac) WHERE mac!=''; CREATE INDEX IF NOT EXISTS idx_customer_notes_customer_id ON customer_notes(customer_id); CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_log(created_at DESC);`);
+ const cols=new Set(db.prepare("PRAGMA table_info(products)").all().map(c=>c.name));
+ for(const [name,definition] of [["customer_id","TEXT"],["ship_address1","TEXT NOT NULL DEFAULT ''"],["ship_address2","TEXT NOT NULL DEFAULT ''"],["ship_city","TEXT NOT NULL DEFAULT ''"],["ship_state","TEXT NOT NULL DEFAULT ''"],["ship_zip","TEXT NOT NULL DEFAULT ''"],["shipping_notes","TEXT NOT NULL DEFAULT ''"],["payment_method","TEXT NOT NULL DEFAULT ''"],["payment_reference","TEXT NOT NULL DEFAULT ''"],["sale_notes","TEXT NOT NULL DEFAULT ''"]])if(!cols.has(name))db.exec(`ALTER TABLE products ADD COLUMN ${name} ${definition}`);
+ db.exec("CREATE INDEX IF NOT EXISTS idx_products_customer_id ON products(customer_id)");
 }
-const findCustomerByName = db.prepare("SELECT id FROM customers WHERE lower(name)=lower(?) ORDER BY updated_at DESC LIMIT 1");
-const addCustomer = db.prepare("INSERT INTO customers (id,name,phone,address1,address2,city,state,zip,shipping_notes) VALUES (?,?,?,?,?,?,?,?,?)");
-const oldSales = db.prepare("SELECT DISTINCT customer_name AS name, phone FROM products WHERE status='sold' AND customer_name IS NOT NULL AND customer_name!='' AND customer_id IS NULL").all();
-for (const old of oldSales) {
-  let customer = findCustomerByName.get(old.name);
-  if (!customer) { const id = crypto.randomUUID(); addCustomer.run(id,old.name,old.phone||"","","","","","",""); customer = { id }; }
-  db.prepare("UPDATE products SET customer_id=? WHERE status='sold' AND customer_id IS NULL AND lower(customer_name)=lower(?)").run(customer.id,old.name);
-}
+const hashPassword=password=>{const salt=randomBytes(16).toString("hex");return `scrypt$${salt}$${scryptSync(password,salt,64).toString("hex")}`};
+function verifyPassword(password,stored){try{const[kind,salt,hash]=stored.split("$");if(kind!=="scrypt")return false;const actual=scryptSync(password,salt,64),expected=Buffer.from(hash,"hex");return actual.length===expected.length&&timingSafeEqual(actual,expected)}catch{return false}}
+function validPassword(value){if(String(value||"").length<8)throw new Error("Password must be at least 8 characters.");return String(value)}
+function cleanUsername(value){const name=String(value||"").trim();if(!/^[a-zA-Z0-9._-]{3,40}$/.test(name))throw new Error("Username must be 3–40 characters using letters, numbers, periods, dashes, or underscores.");return name}
+initializeDatabase();
+try{const event=JSON.parse(await readFile(restoreMarker,"utf8"));db.prepare("INSERT INTO audit_log (username,action,target,details,ip_address) VALUES (?,'database_restore',?,?,?)").run(event.username||"system",event.target||"",event.details||"Restored database",event.ipAddress||"");await unlink(restoreMarker)}catch(error){if(error.code!=="ENOENT")console.error("Unable to import restore audit event:",error.message)}
+const seed=[["Logan Crabtree","273D000000021255","A0:BB:3E:02:12:55"],["Marvin Wade","273D00000002194E","A0:BB:3E:02:19:4E"],["Logan Crabtree","273D00000002185F","A0:BB:3E:02:18:5F"],["Logan Crabtree","273D00000002193A","A0:BB:3E:02:19:3A"],["Mark Milburn","273D0000000218BD","A0:BB:3E:02:18:BD"],["Matt Avila","273D0000000219D5","A0:BB:3E:02:19:D5"],["Andy Nguyen","273D0000000219FD","A0:BB:3E:02:19:FD"],["Andy Nguyen","273D000000021181","A0:BB:3E:02:11:81"],["Daniel Wade","273D00000002125A","A0:BB:3E:02:12:5A"],["Marvin Wade","273D0000000219D4","A0:BB:3E:02:19:D4"]];
+if(db.prepare("SELECT COUNT(*) count FROM products").get().count===0){const insert=db.prepare("INSERT INTO products (id,uid,sn,mac,model,condition,received_at,status,sold_at,customer_name) VALUES (?,?,?,?,?,?,?,?,?,?)");db.exec("BEGIN");try{seed.forEach(([name,sn,mac])=>insert.run(crypto.randomUUID(),"",sn,mac,"V3 Plus","New","2024-08-20","sold","2024-08-20",name));db.exec("COMMIT")}catch(e){db.exec("ROLLBACK");throw e}}
+if(db.prepare("SELECT COUNT(*) count FROM users").get().count===0){db.prepare("INSERT INTO users (id,username,password_hash,role,must_change_password) VALUES (?,?,?,?,1)").run(crypto.randomUUID(),"admin",hashPassword("admin"),"admin");db.prepare("INSERT INTO audit_log (action,target,details) VALUES ('bootstrap_admin','admin','Default administrator created; password change required')").run()}
+const findCustomerByName=db.prepare("SELECT id FROM customers WHERE lower(name)=lower(?) ORDER BY updated_at DESC LIMIT 1"),addCustomer=db.prepare("INSERT INTO customers (id,name,phone,address1,address2,city,state,zip,shipping_notes) VALUES (?,?,?,?,?,?,?,?,?)");
+for(const old of db.prepare("SELECT DISTINCT customer_name name,phone FROM products WHERE status='sold' AND customer_name IS NOT NULL AND customer_name!='' AND customer_id IS NULL").all()){let customer=findCustomerByName.get(old.name);if(!customer){const id=crypto.randomUUID();addCustomer.run(id,old.name,old.phone||"","","","","","","");customer={id}}db.prepare("UPDATE products SET customer_id=? WHERE status='sold' AND customer_id IS NULL AND lower(customer_name)=lower(?)").run(customer.id,old.name)}
 db.exec("PRAGMA optimize");
+if(process.argv[2]==="reset-admin"){const username=cleanUsername(process.argv[3]||"admin"),password=validPassword(process.argv[4]||process.env.RESET_ADMIN_PASSWORD||""),existing=db.prepare("SELECT id FROM users WHERE username=? COLLATE NOCASE").get(username);if(existing)db.prepare("UPDATE users SET password_hash=?,role='admin',enabled=1,must_change_password=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(hashPassword(password),existing.id);else db.prepare("INSERT INTO users (id,username,password_hash,role,enabled,must_change_password) VALUES (?,?,?,'admin',1,1)").run(crypto.randomUUID(),username,hashPassword(password));db.prepare("INSERT INTO audit_log (username,action,target,details) VALUES ('system','emergency_admin_reset',?,'Console reset; password change required')").run(username);console.log(`Administrator ${username} reset. Password change required at next login.`);db.close();process.exit(0)}
 
-const columns = `id, uid, sn, mac, manufacturer, model, condition, received_at AS receivedAt, cost, notes,
-  status, sold_at AS soldAt, customer_id AS customerId, customer_name AS customerName, phone, sale_price AS salePrice,
-  ship_address1 AS shipAddress1, ship_address2 AS shipAddress2, ship_city AS shipCity, ship_state AS shipState,
-  ship_zip AS shipZip, shipping_notes AS shippingNotes, payment_method AS paymentMethod, payment_reference AS paymentReference,
-  sale_notes AS saleNotes`;
-const list = db.prepare(`SELECT ${columns} FROM products ORDER BY CASE WHEN status='available' THEN received_at ELSE sold_at END DESC, rowid DESC`);
-const get = db.prepare(`SELECT ${columns} FROM products WHERE id=?`);
-const allowedModels = new Set(["V3 Plus", "V6 Plus", "V6 Pro", "V5 Pro"]);
-const allowedConditions = new Set(["New", "Used", "Refurbished"]);
+const columns="id,uid,sn,mac,manufacturer,model,condition,received_at AS receivedAt,cost,notes,status,sold_at AS soldAt,customer_id AS customerId,customer_name AS customerName,phone,sale_price AS salePrice,ship_address1 AS shipAddress1,ship_address2 AS shipAddress2,ship_city AS shipCity,ship_state AS shipState,ship_zip AS shipZip,shipping_notes AS shippingNotes,payment_method AS paymentMethod,payment_reference AS paymentReference,sale_notes AS saleNotes";
+const allowedModels=new Set(["V3 Plus","V6 Plus","V6 Pro","V5 Pro"]),allowedConditions=new Set(["New","Used","Refurbished"]);
+const getProduct=()=>db.prepare(`SELECT ${columns} FROM products WHERE id=?`),listProducts=()=>db.prepare(`SELECT ${columns} FROM products ORDER BY CASE WHEN status='available' THEN received_at ELSE sold_at END DESC,rowid DESC`);
+function json(res,status,value,headers={}){const b=JSON.stringify(value);res.writeHead(status,{"content-type":"application/json","content-length":Buffer.byteLength(b),...headers});res.end(b)}
+async function body(req){let raw="";for await(const chunk of req){raw+=chunk;if(raw.length>1_000_000)throw new Error("Request too large")}return raw?JSON.parse(raw):{}}
+async function rawBody(req){const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>100_000_000)throw new Error("Backup file is too large");chunks.push(chunk)}return Buffer.concat(chunks)}
+const clientIp=req=>String(req.headers["x-forwarded-for"]||req.socket.remoteAddress||"").split(",")[0].trim();
+function cookieMap(req){return Object.fromEntries(String(req.headers.cookie||"").split(";").filter(Boolean).map(part=>{const i=part.indexOf("=");return[part.slice(0,i).trim(),decodeURIComponent(part.slice(i+1))]}))}
+const tokenKey=token=>createHash("sha256").update(token).digest("hex");
+function sessionCookie(req,token,maxAge=SESSION_IDLE_MS/1000){return `stockroom_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${req.headers["x-forwarded-proto"]==="https"?"; Secure":""}`}
+function currentSession(req){const token=cookieMap(req).stockroom_session;if(!token)return null;const key=tokenKey(token),session=sessions.get(key);if(!session)return null;if(Date.now()-session.lastSeen>SESSION_IDLE_MS){sessions.delete(key);return null}const user=db.prepare("SELECT id,username,role,enabled,must_change_password AS mustChangePassword FROM users WHERE id=?").get(session.userId);if(!user?.enabled){sessions.delete(key);return null}session.lastSeen=Date.now();return{...session,user,tokenKey:key}}
+function audit(req,user,action,target="",details=""){db.prepare("INSERT INTO audit_log (user_id,username,action,target,details,ip_address) VALUES (?,?,?,?,?,?)").run(user?.id||null,user?.username||"system",action,target,details,clientIp(req))}
+function invalidateUserSessions(id){for(const[key,value]of sessions)if(value.userId===id)sessions.delete(key)}
+function requireOrigin(req){if(["GET","HEAD","OPTIONS"].includes(req.method))return;const origin=req.headers.origin;if(origin){const expected=`${req.headers["x-forwarded-proto"]||"http"}://${req.headers.host}`;if(origin!==expected)throw Object.assign(new Error("Invalid request origin."),{status:403})}}
+function authorize(req,url){if(url.pathname==="/api/health"||url.pathname==="/api/auth/login")return null;const session=currentSession(req);if(!session)throw Object.assign(new Error("Authentication required."),{status:401,code:"AUTH_REQUIRED"});if(session.user.mustChangePassword&&!new Set(["/api/auth/me","/api/auth/change-password","/api/auth/logout"]).has(url.pathname))throw Object.assign(new Error("Password change required."),{status:403,code:"PASSWORD_CHANGE_REQUIRED"});if(url.pathname.startsWith("/api/admin/")&&session.user.role!=="admin")throw Object.assign(new Error("Administrator access required."),{status:403});if(req.method!=="GET"&&session.user.role!=="admin"&&!url.pathname.startsWith("/api/auth/"))throw Object.assign(new Error("This account is read-only."),{status:403});return session}
+const backupName=(prefix="stockroom")=>`${prefix}-${new Date().toISOString().replace(/[:.]/g,"-")}.db`;
+async function createBackup(prefix){const name=backupName(prefix),path=join(backupDir,name);await backup(db,path);return name}
+function safeBackup(name){if(!/^[a-zA-Z0-9._-]+\.db$/.test(name))throw new Error("Invalid backup name");return join(backupDir,name)}
+function validateBackup(path){const candidate=new DatabaseSync(path,{readOnly:true});try{const tables=new Set(candidate.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name));if(!tables.has("products")||!tables.has("customers"))throw new Error("This is not a valid Stockroom database.");const integrity=candidate.prepare("PRAGMA integrity_check").get();if(Object.values(integrity)[0]!=="ok")throw new Error("The backup failed its integrity check.")}finally{candidate.close()}}
+async function restoreFrom(path,res,req,user){validateBackup(path);const target=path.split("/").pop();await createBackup("pre-restore");audit(req,user,"database_restore",target);db.exec("PRAGMA wal_checkpoint(TRUNCATE)");db.close();await copyFile(path,databasePath);await unlink(`${databasePath}-wal`).catch(()=>{});await unlink(`${databasePath}-shm`).catch(()=>{});await writeFile(restoreMarker,JSON.stringify({username:user.username,target,details:"Database restored; all sessions invalidated",ipAddress:clientIp(req)}));sessions.clear();json(res,200,{ok:true,restarting:true});setTimeout(()=>process.exit(0),250)}
+function confirmPassword(user,password){const record=db.prepare("SELECT password_hash FROM users WHERE id=?").get(user.id);if(!record||!verifyPassword(String(password||""),record.password_hash))throw Object.assign(new Error("Current password is incorrect."),{status:403})}
+function productInput(v){const model=String(v.model||""),condition=String(v.condition||"");if(!allowedModels.has(model)||!allowedConditions.has(condition)||!v.receivedAt)throw new Error("Model, condition, and received date are required.");return{uid:String(v.uid||"").trim(),sn:String(v.sn||"").trim(),mac:String(v.mac||"").trim(),model,condition,receivedAt:String(v.receivedAt),cost:Number(v.cost)||0,notes:String(v.notes||"").trim()}}
 
-function json(res, status, value) { const body = JSON.stringify(value); res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(body) }); res.end(body); }
-async function body(req) { let raw = ""; for await (const chunk of req) { raw += chunk; if (raw.length > 1_000_000) throw new Error("Request too large"); } return raw ? JSON.parse(raw) : {}; }
-async function rawBody(req) { const chunks=[]; let size=0; for await(const chunk of req){size+=chunk.length;if(size>100_000_000)throw new Error("Backup file is too large");chunks.push(chunk);}return Buffer.concat(chunks); }
-const backupName = (prefix="stockroom") => `${prefix}-${new Date().toISOString().replace(/[:.]/g,"-")}.db`;
-async function createBackup(prefix) { const name=backupName(prefix), path=join(backupDir,name); await backup(db,path); return name; }
-function safeBackup(name) { if(!/^[a-zA-Z0-9._-]+\.db$/.test(name)) throw new Error("Invalid backup name"); return join(backupDir,name); }
-function validateBackup(path) { const candidate=new DatabaseSync(path,{readOnly:true}); try { const tables=new Set(candidate.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name)); if(!tables.has("products")||!tables.has("customers"))throw new Error("This is not a valid Stockroom database."); candidate.prepare("PRAGMA integrity_check").get(); } finally { candidate.close(); } }
-async function restoreFrom(path,res) { validateBackup(path); await createBackup("pre-restore"); db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); db.close(); await copyFile(path,databasePath); await unlink(`${databasePath}-wal`).catch(()=>{}); await unlink(`${databasePath}-shm`).catch(()=>{}); json(res,200,{ok:true,restarting:true}); setTimeout(()=>process.exit(0),250); }
-function productInput(value) {
-  const model = String(value.model || ""); const condition = String(value.condition || "");
-  if (!allowedModels.has(model) || !allowedConditions.has(condition) || !value.receivedAt) throw new Error("Model, condition, and received date are required.");
-  return { uid:String(value.uid||"").trim(), sn:String(value.sn||"").trim(), mac:String(value.mac||"").trim(), model, condition, receivedAt:String(value.receivedAt), cost:Number(value.cost)||0, notes:String(value.notes||"").trim() };
+async function authApi(req,res,url,session){
+ if(url.pathname==="/api/auth/login"&&req.method==="POST"){const v=await body(req),username=String(v.username||"").trim(),key=`${clientIp(req)}|${username.toLowerCase()}`,failure=loginFailures.get(key);if(failure&&failure.count>=5&&failure.until>Date.now())throw Object.assign(new Error("Too many failed attempts. Try again in 15 minutes."),{status:429});const user=db.prepare("SELECT id,username,password_hash,role,enabled,must_change_password AS mustChangePassword FROM users WHERE username=? COLLATE NOCASE").get(username);if(!user?.enabled||!verifyPassword(String(v.password||""),user.password_hash)){loginFailures.set(key,{count:(failure?.count||0)+1,until:Date.now()+15*60*1000});audit(req,user,"login_failed",username);throw Object.assign(new Error("Invalid username or password."),{status:401})}loginFailures.delete(key);const token=randomBytes(32).toString("base64url");sessions.set(tokenKey(token),{userId:user.id,lastSeen:Date.now()});db.prepare("UPDATE users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?").run(user.id);audit(req,user,"login_success");return json(res,200,{username:user.username,role:user.role,mustChangePassword:Boolean(user.mustChangePassword)},{"set-cookie":sessionCookie(req,token)})}
+ if(url.pathname==="/api/auth/me"&&req.method==="GET")return json(res,200,{username:session.user.username,role:session.user.role,mustChangePassword:Boolean(session.user.mustChangePassword)});
+ if(url.pathname==="/api/auth/logout"&&req.method==="POST"){sessions.delete(session.tokenKey);return json(res,200,{ok:true},{"set-cookie":sessionCookie(req,"",0)})}
+ if(url.pathname==="/api/auth/change-password"&&req.method==="POST"){const v=await body(req);confirmPassword(session.user,v.currentPassword);const next=validPassword(v.newPassword);if(v.newPassword!==v.confirmPassword)throw new Error("New passwords do not match.");db.prepare("UPDATE users SET password_hash=?,must_change_password=0,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(hashPassword(next),session.user.id);audit(req,session.user,"password_changed",session.user.username);invalidateUserSessions(session.user.id);const token=randomBytes(32).toString("base64url");sessions.set(tokenKey(token),{userId:session.user.id,lastSeen:Date.now()});return json(res,200,{ok:true},{"set-cookie":sessionCookie(req,token)})}
+ return false;
 }
 
-async function api(req, res, url) {
-  if (url.pathname === "/api/health") return json(res, 200, { ok:true });
-  if (url.pathname === "/api/admin/backups" && req.method === "GET") {
-    const files=await readdir(backupDir,{withFileTypes:true}), result=[]; for(const file of files){if(file.isFile()&&file.name.endsWith(".db")){const info=await stat(join(backupDir,file.name));result.push({name:file.name,size:info.size,createdAt:info.mtime.toISOString()});}}
-    return json(res,200,result.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)));
-  }
-  if (url.pathname === "/api/admin/backups" && req.method === "POST") return json(res,201,{name:await createBackup("stockroom")});
-  if (url.pathname === "/api/admin/restore-upload" && req.method === "POST") { const path=join(backupDir,`upload-${crypto.randomUUID()}.db`); await writeFile(path,await rawBody(req)); return await restoreFrom(path,res); }
-  const adminMatch=url.pathname.match(/^\/api\/admin\/backups\/([^/]+)\/(download|restore)$/);
-  if(adminMatch){const name=decodeURIComponent(adminMatch[1]),action=adminMatch[2],path=safeBackup(name);await stat(path);
-    if(action==="download"&&req.method==="GET"){const content=await readFile(path);res.writeHead(200,{"content-type":"application/vnd.sqlite3","content-disposition":`attachment; filename="${name}"`,"content-length":content.length});return res.end(content);}
-    if(action==="restore"&&req.method==="POST")return await restoreFrom(path,res);
-  }
-  const deleteBackupMatch=url.pathname.match(/^\/api\/admin\/backups\/([^/]+)$/);
-  if(deleteBackupMatch&&req.method==="DELETE"){const path=safeBackup(decodeURIComponent(deleteBackupMatch[1]));await unlink(path);res.writeHead(204);return res.end();}
-  if (url.pathname === "/api/products" && req.method === "GET") return json(res, 200, list.all());
-  if (url.pathname === "/api/products" && req.method === "POST") {
-    const p = productInput(await body(req)); const id = crypto.randomUUID();
-    db.prepare("INSERT INTO products (id,uid,sn,mac,model,condition,received_at,cost,notes) VALUES (?,?,?,?,?,?,?,?,?)").run(id,p.uid,p.sn,p.mac,p.model,p.condition,p.receivedAt,p.cost,p.notes);
-    return json(res, 201, get.get(id));
-  }
-  const customerMatch = url.pathname.match(/^\/api\/customers\/([^/]+)$/);
-  if (customerMatch && req.method === "GET") {
-    const id = decodeURIComponent(customerMatch[1]);
-    const customer = db.prepare("SELECT id,name,phone,address1,address2,city,state,zip,shipping_notes AS shippingNotes FROM customers WHERE id=?").get(id);
-    if (!customer) return json(res, 404, { error:"Customer not found" });
-    const purchases = db.prepare(`SELECT ${columns} FROM products WHERE status='sold' AND customer_id=? ORDER BY sold_at DESC, rowid DESC`).all(id);
-    const notes = db.prepare("SELECT id,category,note,created_at AS createdAt,updated_at AS updatedAt FROM customer_notes WHERE customer_id=? ORDER BY created_at DESC, rowid DESC").all(id);
-    return json(res, 200, { ...customer, purchases, notes });
-  }
-  const notesMatch = url.pathname.match(/^\/api\/customers\/([^/]+)\/notes(?:\/([^/]+))?$/);
-  if (notesMatch) {
-    const customerId=decodeURIComponent(notesMatch[1]), noteId=notesMatch[2]?decodeURIComponent(notesMatch[2]):null;
-    if (!db.prepare("SELECT id FROM customers WHERE id=?").get(customerId)) return json(res,404,{error:"Customer not found"});
-    if (req.method === "POST" && !noteId) {
-      const v=await body(req), note=String(v.note||"").trim(), category=String(v.category||"General");
-      if (!note) throw new Error("Note text is required.");
-      if (!new Set(["General","Support","Follow-up"]).has(category)) throw new Error("Invalid note category.");
-      const id=crypto.randomUUID(); db.prepare("INSERT INTO customer_notes (id,customer_id,category,note) VALUES (?,?,?,?)").run(id,customerId,category,note);
-      return json(res,201,db.prepare("SELECT id,category,note,created_at AS createdAt,updated_at AS updatedAt FROM customer_notes WHERE id=?").get(id));
-    }
-    if (req.method === "DELETE" && noteId) {
-      db.prepare("DELETE FROM customer_notes WHERE id=? AND customer_id=?").run(noteId,customerId); res.writeHead(204); return res.end();
-    }
-    return json(res,405,{error:"Method not allowed"});
-  }
-  const match = url.pathname.match(/^\/api\/products\/([^/]+)(?:\/(sell|restock))?$/);
-  if (!match) return json(res, 404, { error:"Not found" });
-  const id = decodeURIComponent(match[1]); const action = match[2]; const current = get.get(id);
-  if (!current) return json(res, 404, { error:"Product not found" });
-  if (req.method === "DELETE" && !action) { db.prepare("DELETE FROM products WHERE id=?").run(id); res.writeHead(204); return res.end(); }
-  if (req.method === "PATCH" && !action) {
-    if (current.status !== "sold") return json(res,400,{error:"Transaction notes can only be added to sales."});
-    const v=await body(req); db.prepare("UPDATE products SET sale_notes=? WHERE id=?").run(String(v.saleNotes||"").trim(),id);
-    return json(res,200,get.get(id));
-  }
-  if (req.method === "POST" && action === "sell") {
-    const v = await body(req); if (!String(v.customerName||"").trim() || !v.soldAt) throw new Error("Customer name and sale date are required.");
-    const paymentMethod=String(v.paymentMethod||"").trim();
-    if (!new Set(["Cash","Venmo","PayPal"]).has(paymentMethod)) throw new Error("Payment method must be Cash, Venmo, or PayPal.");
-    const name=String(v.customerName).trim(), phone=String(v.phone||"").trim(), address1=String(v.shipAddress1||"").trim(), address2=String(v.shipAddress2||"").trim(), city=String(v.shipCity||"").trim(), state=String(v.shipState||"").trim(), zip=String(v.shipZip||"").trim(), shippingNotes=String(v.shippingNotes||"").trim();
-    let customer = v.customerId ? db.prepare("SELECT id FROM customers WHERE id=?").get(String(v.customerId)) : findCustomerByName.get(name);
-    if (!customer) { customer={id:crypto.randomUUID()}; addCustomer.run(customer.id,name,phone,address1,address2,city,state,zip,shippingNotes); }
-    else db.prepare("UPDATE customers SET name=?,phone=?,address1=?,address2=?,city=?,state=?,zip=?,shipping_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(name,phone,address1,address2,city,state,zip,shippingNotes,customer.id);
-    db.prepare("UPDATE products SET status='sold', sold_at=?, customer_id=?, customer_name=?, phone=?, sale_price=?, ship_address1=?, ship_address2=?, ship_city=?, ship_state=?, ship_zip=?, shipping_notes=?, payment_method=?, payment_reference=?, sale_notes=? WHERE id=? AND status='available'").run(String(v.soldAt),customer.id,name,phone,Number(v.salePrice)||0,address1,address2,city,state,zip,shippingNotes,paymentMethod,String(v.paymentReference||"").trim(),String(v.saleNotes||"").trim(),id);
-    return json(res, 200, get.get(id));
-  }
-  if (req.method === "POST" && action === "restock") {
-    const v = await body(req); if (!allowedConditions.has(v.condition) || !v.receivedAt) throw new Error("Condition and return date are required.");
-    db.prepare("UPDATE products SET status='available', condition=?, received_at=?, sold_at=NULL, customer_id=NULL, customer_name=NULL, phone=NULL, sale_price=NULL, ship_address1='', ship_address2='', ship_city='', ship_state='', ship_zip='', shipping_notes='', payment_method='', payment_reference='', sale_notes='' WHERE id=? AND status='sold'").run(v.condition,String(v.receivedAt),id);
-    return json(res, 200, get.get(id));
-  }
-  return json(res, 405, { error:"Method not allowed" });
+async function adminApi(req,res,url,session){
+ const user=session.user;
+ if(url.pathname==="/api/admin/users"&&req.method==="GET")return json(res,200,db.prepare("SELECT id,username,role,enabled,must_change_password AS mustChangePassword,created_at AS createdAt,last_login_at AS lastLoginAt FROM users ORDER BY lower(username)").all().map(x=>({...x,enabled:Boolean(x.enabled),mustChangePassword:Boolean(x.mustChangePassword)})));
+ if(url.pathname==="/api/admin/users"&&req.method==="POST"){const v=await body(req),username=cleanUsername(v.username),password=validPassword(v.password),role=String(v.role);if(!new Set(["admin","readonly"]).has(role))throw new Error("Invalid role.");const id=crypto.randomUUID();db.prepare("INSERT INTO users (id,username,password_hash,role,must_change_password) VALUES (?,?,?,?,1)").run(id,username,hashPassword(password),role);audit(req,user,"user_created",username,role);return json(res,201,{id,username,role,enabled:true,mustChangePassword:true})}
+ const userMatch=url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
+ if(userMatch){const id=decodeURIComponent(userMatch[1]),target=db.prepare("SELECT id,username,role,enabled FROM users WHERE id=?").get(id);if(!target)return json(res,404,{error:"User not found"});if(req.method==="PATCH"){const v=await body(req);if(id===user.id&&(v.enabled===false||v.role==="readonly"))throw new Error("You cannot disable or demote your current account.");const role=v.role??target.role,enabled=v.enabled===undefined?Boolean(target.enabled):Boolean(v.enabled);if(!new Set(["admin","readonly"]).has(role))throw new Error("Invalid role.");if(target.role==="admin"&&target.enabled&&(role!=="admin"||!enabled)&&db.prepare("SELECT COUNT(*) count FROM users WHERE role='admin' AND enabled=1").get().count<=1)throw new Error("The final enabled administrator cannot be changed.");db.prepare("UPDATE users SET role=?,enabled=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(role,enabled?1:0,id);invalidateUserSessions(id);audit(req,user,"user_updated",target.username,`${role}; ${enabled?"enabled":"disabled"}`);return json(res,200,{ok:true})}if(req.method==="DELETE"){if(id===user.id)throw new Error("You cannot delete your current account.");if(target.role==="admin"&&target.enabled&&db.prepare("SELECT COUNT(*) count FROM users WHERE role='admin' AND enabled=1").get().count<=1)throw new Error("The final enabled administrator cannot be deleted.");db.prepare("DELETE FROM users WHERE id=?").run(id);invalidateUserSessions(id);audit(req,user,"user_deleted",target.username);return json(res,204,null)}}
+ const resetMatch=url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/reset-password$/);
+ if(resetMatch&&req.method==="POST"){const id=decodeURIComponent(resetMatch[1]),target=db.prepare("SELECT username FROM users WHERE id=?").get(id);if(!target)return json(res,404,{error:"User not found"});const v=await body(req);db.prepare("UPDATE users SET password_hash=?,must_change_password=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(hashPassword(validPassword(v.password)),id);invalidateUserSessions(id);audit(req,user,"password_reset",target.username);return json(res,200,{ok:true})}
+ if(url.pathname==="/api/admin/audit"&&req.method==="GET")return json(res,200,db.prepare("SELECT id,username,action,target,details,ip_address AS ipAddress,created_at AS createdAt FROM audit_log ORDER BY id DESC LIMIT 250").all());
+ if(url.pathname==="/api/admin/backups"&&req.method==="GET"){const files=await readdir(backupDir,{withFileTypes:true}),result=[];for(const file of files)if(file.isFile()&&file.name.endsWith(".db")){const info=await stat(join(backupDir,file.name));result.push({name:file.name,size:info.size,createdAt:info.mtime.toISOString()})}return json(res,200,result.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))}
+ if(url.pathname==="/api/admin/backups"&&req.method==="POST"){const name=await createBackup("stockroom");audit(req,user,"backup_created",name);return json(res,201,{name})}
+ if(url.pathname==="/api/admin/restore-upload"&&req.method==="POST"){confirmPassword(user,req.headers["x-confirm-password"]);const path=join(backupDir,`upload-${crypto.randomUUID()}.db`);await writeFile(path,await rawBody(req));return restoreFrom(path,res,req,user)}
+ const backupMatch=url.pathname.match(/^\/api\/admin\/backups\/([^/]+)\/(download|restore)$/);
+ if(backupMatch){const name=decodeURIComponent(backupMatch[1]),action=backupMatch[2],path=safeBackup(name);await stat(path);if(action==="download"&&req.method==="GET"){audit(req,user,"backup_downloaded",name);const content=await readFile(path);res.writeHead(200,{"content-type":"application/vnd.sqlite3","content-disposition":`attachment; filename="${name}"`,"content-length":content.length});return res.end(content)}if(action==="restore"&&req.method==="POST"){const v=await body(req);confirmPassword(user,v.password);return restoreFrom(path,res,req,user)}}
+ const deleteMatch=url.pathname.match(/^\/api\/admin\/backups\/([^/]+)$/);if(deleteMatch&&req.method==="DELETE"){const name=decodeURIComponent(deleteMatch[1]);await unlink(safeBackup(name));audit(req,user,"backup_deleted",name);return json(res,204,null)}
+ return false;
 }
 
-const mime = { ".html":"text/html; charset=utf-8", ".css":"text/css; charset=utf-8", ".js":"text/javascript; charset=utf-8", ".svg":"image/svg+xml" };
-createServer(async (req, res) => {
-  try {
-    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-    if (url.pathname.startsWith("/api/")) return await api(req, res, url);
-    const requested = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
-    const file = normalize(join(publicDir, requested));
-    if (!file.startsWith(publicDir) || !(await stat(file)).isFile()) throw new Error("NOT_FOUND");
-    const content = await readFile(file); res.writeHead(200, { "content-type": mime[extname(file)] || "application/octet-stream" }); res.end(content);
-  } catch (error) {
-    if (error.message === "NOT_FOUND" || error.code === "ENOENT") return json(res, 404, { error:"Not found" });
-    const duplicate = String(error.message).includes("UNIQUE constraint failed");
-    json(res, duplicate ? 409 : 400, { error: duplicate ? "That UID, SN, or MAC is already recorded." : error.message });
-  }
-}).listen(port, "0.0.0.0", () => console.log(`Stockroom listening on port ${port}`));
+async function api(req,res,url){
+ requireOrigin(req);const session=authorize(req,url);if(url.pathname==="/api/health")return json(res,200,{ok:true});
+ if(url.pathname.startsWith("/api/auth/")){const handled=await authApi(req,res,url,session);if(handled!==false)return handled}
+ if(url.pathname.startsWith("/api/admin/")){const handled=await adminApi(req,res,url,session);if(handled!==false)return handled}
+ const user=session.user;
+ if(url.pathname==="/api/products"&&req.method==="GET")return json(res,200,listProducts().all());
+ if(url.pathname==="/api/products"&&req.method==="POST"){const p=productInput(await body(req)),id=crypto.randomUUID();db.prepare("INSERT INTO products (id,uid,sn,mac,model,condition,received_at,cost,notes) VALUES (?,?,?,?,?,?,?,?,?)").run(id,p.uid,p.sn,p.mac,p.model,p.condition,p.receivedAt,p.cost,p.notes);audit(req,user,"product_received",id,p.model);return json(res,201,getProduct().get(id))}
+ const customerMatch=url.pathname.match(/^\/api\/customers\/([^/]+)$/);
+ if(customerMatch&&req.method==="GET"){const id=decodeURIComponent(customerMatch[1]),customer=db.prepare("SELECT id,name,phone,address1,address2,city,state,zip,shipping_notes AS shippingNotes FROM customers WHERE id=?").get(id);if(!customer)return json(res,404,{error:"Customer not found"});const purchases=db.prepare(`SELECT ${columns} FROM products WHERE status='sold' AND customer_id=? ORDER BY sold_at DESC,rowid DESC`).all(id),notes=db.prepare("SELECT id,category,note,created_at AS createdAt,updated_at AS updatedAt FROM customer_notes WHERE customer_id=? ORDER BY created_at DESC,rowid DESC").all(id);return json(res,200,{...customer,purchases,notes})}
+ const notesMatch=url.pathname.match(/^\/api\/customers\/([^/]+)\/notes(?:\/([^/]+))?$/);
+ if(notesMatch){const customerId=decodeURIComponent(notesMatch[1]),noteId=notesMatch[2]?decodeURIComponent(notesMatch[2]):null;if(!db.prepare("SELECT id FROM customers WHERE id=?").get(customerId))return json(res,404,{error:"Customer not found"});if(req.method==="POST"&&!noteId){const v=await body(req),note=String(v.note||"").trim(),category=String(v.category||"General");if(!note)throw new Error("Note text is required.");if(!new Set(["General","Support","Follow-up"]).has(category))throw new Error("Invalid note category.");const id=crypto.randomUUID();db.prepare("INSERT INTO customer_notes (id,customer_id,category,note) VALUES (?,?,?,?)").run(id,customerId,category,note);audit(req,user,"customer_note_added",customerId,category);return json(res,201,{id,category,note})}if(req.method==="DELETE"&&noteId){db.prepare("DELETE FROM customer_notes WHERE id=? AND customer_id=?").run(noteId,customerId);audit(req,user,"customer_note_deleted",customerId,noteId);return json(res,204,null)}}
+ const match=url.pathname.match(/^\/api\/products\/([^/]+)(?:\/(sell|restock))?$/);if(!match)return json(res,404,{error:"Not found"});const id=decodeURIComponent(match[1]),action=match[2],current=getProduct().get(id);if(!current)return json(res,404,{error:"Product not found"});
+ if(req.method==="DELETE"&&!action){db.prepare("DELETE FROM products WHERE id=?").run(id);audit(req,user,"record_deleted",id,current.status);return json(res,204,null)}
+ if(req.method==="PATCH"&&!action){if(current.status!=="sold")return json(res,400,{error:"Transaction notes can only be added to sales."});const v=await body(req);db.prepare("UPDATE products SET sale_notes=? WHERE id=?").run(String(v.saleNotes||"").trim(),id);audit(req,user,"sale_notes_updated",id);return json(res,200,getProduct().get(id))}
+ if(req.method==="POST"&&action==="sell"){const v=await body(req);if(!String(v.customerName||"").trim()||!v.soldAt)throw new Error("Customer name and sale date are required.");const paymentMethod=String(v.paymentMethod||"").trim();if(!new Set(["Cash","Venmo","PayPal"]).has(paymentMethod))throw new Error("Payment method must be Cash, Venmo, or PayPal.");const name=String(v.customerName).trim(),phone=String(v.phone||"").trim(),address1=String(v.shipAddress1||"").trim(),address2=String(v.shipAddress2||"").trim(),city=String(v.shipCity||"").trim(),state=String(v.shipState||"").trim(),zip=String(v.shipZip||"").trim(),shippingNotes=String(v.shippingNotes||"").trim();let customer=v.customerId?db.prepare("SELECT id FROM customers WHERE id=?").get(String(v.customerId)):findCustomerByName.get(name);if(!customer){customer={id:crypto.randomUUID()};addCustomer.run(customer.id,name,phone,address1,address2,city,state,zip,shippingNotes)}else db.prepare("UPDATE customers SET name=?,phone=?,address1=?,address2=?,city=?,state=?,zip=?,shipping_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(name,phone,address1,address2,city,state,zip,shippingNotes,customer.id);db.prepare("UPDATE products SET status='sold',sold_at=?,customer_id=?,customer_name=?,phone=?,sale_price=?,ship_address1=?,ship_address2=?,ship_city=?,ship_state=?,ship_zip=?,shipping_notes=?,payment_method=?,payment_reference=?,sale_notes=? WHERE id=? AND status='available'").run(String(v.soldAt),customer.id,name,phone,Number(v.salePrice)||0,address1,address2,city,state,zip,shippingNotes,paymentMethod,String(v.paymentReference||"").trim(),String(v.saleNotes||"").trim(),id);audit(req,user,"sale_recorded",id,name);return json(res,200,getProduct().get(id))}
+ if(req.method==="POST"&&action==="restock"){const v=await body(req);if(!allowedConditions.has(v.condition)||!v.receivedAt)throw new Error("Condition and return date are required.");db.prepare("UPDATE products SET status='available',condition=?,received_at=?,sold_at=NULL,customer_id=NULL,customer_name=NULL,phone=NULL,sale_price=NULL,ship_address1='',ship_address2='',ship_city='',ship_state='',ship_zip='',shipping_notes='',payment_method='',payment_reference='',sale_notes='' WHERE id=? AND status='sold'").run(v.condition,String(v.receivedAt),id);audit(req,user,"sale_voided_restocked",id);return json(res,200,getProduct().get(id))}
+ return json(res,405,{error:"Method not allowed"});
+}
+const mime={".html":"text/html; charset=utf-8",".css":"text/css; charset=utf-8",".js":"text/javascript; charset=utf-8",".svg":"image/svg+xml"};
+createServer(async(req,res)=>{try{const url=new URL(req.url,`http://${req.headers.host||"localhost"}`);if(url.pathname.startsWith("/api/"))return await api(req,res,url);const requested=url.pathname==="/"?"index.html":url.pathname.slice(1),file=normalize(join(publicDir,requested));if(!file.startsWith(publicDir)||!(await stat(file)).isFile())throw new Error("NOT_FOUND");const content=await readFile(file);res.writeHead(200,{"content-type":mime[extname(file)]||"application/octet-stream","cache-control":"no-store"});res.end(content)}catch(error){if(error.message==="NOT_FOUND"||error.code==="ENOENT")return json(res,404,{error:"Not found"});const duplicate=String(error.message).includes("UNIQUE constraint failed");json(res,error.status||(duplicate?409:400),{error:duplicate?"That username, UID, SN, or MAC is already recorded.":error.message,code:error.code})}}).listen(port,"0.0.0.0",()=>console.log(`Stockroom listening on port ${port}`));
