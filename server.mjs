@@ -27,10 +27,16 @@ db.exec(`
     state TEXT NOT NULL DEFAULT '', zip TEXT NOT NULL DEFAULT '', shipping_notes TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS customer_notes (
+    id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'General', note TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+  );
   CREATE INDEX IF NOT EXISTS idx_products_status ON products(status);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_products_uid ON products(uid) WHERE uid != '';
   CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sn ON products(sn) WHERE sn != '';
   CREATE UNIQUE INDEX IF NOT EXISTS idx_products_mac ON products(mac) WHERE mac != '';
+  CREATE INDEX IF NOT EXISTS idx_customer_notes_customer_id ON customer_notes(customer_id);
 `);
 
 const productColumnNames = new Set(db.prepare("PRAGMA table_info(products)").all().map((column) => column.name));
@@ -97,19 +103,30 @@ async function api(req, res, url) {
     const customer = db.prepare("SELECT id,name,phone,address1,address2,city,state,zip,shipping_notes AS shippingNotes FROM customers WHERE id=?").get(id);
     if (!customer) return json(res, 404, { error:"Customer not found" });
     const purchases = db.prepare(`SELECT ${columns} FROM products WHERE status='sold' AND customer_id=? ORDER BY sold_at DESC, rowid DESC`).all(id);
-    return json(res, 200, { ...customer, purchases });
+    const notes = db.prepare("SELECT id,category,note,created_at AS createdAt,updated_at AS updatedAt FROM customer_notes WHERE customer_id=? ORDER BY created_at DESC, rowid DESC").all(id);
+    return json(res, 200, { ...customer, purchases, notes });
+  }
+  const notesMatch = url.pathname.match(/^\/api\/customers\/([^/]+)\/notes(?:\/([^/]+))?$/);
+  if (notesMatch) {
+    const customerId=decodeURIComponent(notesMatch[1]), noteId=notesMatch[2]?decodeURIComponent(notesMatch[2]):null;
+    if (!db.prepare("SELECT id FROM customers WHERE id=?").get(customerId)) return json(res,404,{error:"Customer not found"});
+    if (req.method === "POST" && !noteId) {
+      const v=await body(req), note=String(v.note||"").trim(), category=String(v.category||"General");
+      if (!note) throw new Error("Note text is required.");
+      if (!new Set(["General","Support","Follow-up"]).has(category)) throw new Error("Invalid note category.");
+      const id=crypto.randomUUID(); db.prepare("INSERT INTO customer_notes (id,customer_id,category,note) VALUES (?,?,?,?)").run(id,customerId,category,note);
+      return json(res,201,db.prepare("SELECT id,category,note,created_at AS createdAt,updated_at AS updatedAt FROM customer_notes WHERE id=?").get(id));
+    }
+    if (req.method === "DELETE" && noteId) {
+      db.prepare("DELETE FROM customer_notes WHERE id=? AND customer_id=?").run(noteId,customerId); res.writeHead(204); return res.end();
+    }
+    return json(res,405,{error:"Method not allowed"});
   }
   const match = url.pathname.match(/^\/api\/products\/([^/]+)(?:\/(sell|restock))?$/);
   if (!match) return json(res, 404, { error:"Not found" });
   const id = decodeURIComponent(match[1]); const action = match[2]; const current = get.get(id);
   if (!current) return json(res, 404, { error:"Product not found" });
   if (req.method === "DELETE" && !action) { db.prepare("DELETE FROM products WHERE id=?").run(id); res.writeHead(204); return res.end(); }
-  if (req.method === "PATCH" && !action) {
-    if (current.status !== "sold") return json(res, 400, { error:"Sale notes can only be added to sold products." });
-    const v = await body(req);
-    db.prepare("UPDATE products SET sale_notes=? WHERE id=?").run(String(v.saleNotes||"").trim(),id);
-    return json(res, 200, get.get(id));
-  }
   if (req.method === "POST" && action === "sell") {
     const v = await body(req); if (!String(v.customerName||"").trim() || !v.soldAt) throw new Error("Customer name and sale date are required.");
     const paymentMethod=String(v.paymentMethod||"").trim();
@@ -118,7 +135,7 @@ async function api(req, res, url) {
     let customer = v.customerId ? db.prepare("SELECT id FROM customers WHERE id=?").get(String(v.customerId)) : findCustomerByName.get(name);
     if (!customer) { customer={id:crypto.randomUUID()}; addCustomer.run(customer.id,name,phone,address1,address2,city,state,zip,shippingNotes); }
     else db.prepare("UPDATE customers SET name=?,phone=?,address1=?,address2=?,city=?,state=?,zip=?,shipping_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(name,phone,address1,address2,city,state,zip,shippingNotes,customer.id);
-    db.prepare("UPDATE products SET status='sold', sold_at=?, customer_id=?, customer_name=?, phone=?, sale_price=?, ship_address1=?, ship_address2=?, ship_city=?, ship_state=?, ship_zip=?, shipping_notes=?, payment_method=?, payment_reference=?, sale_notes=? WHERE id=? AND status='available'").run(String(v.soldAt),customer.id,name,phone,Number(v.salePrice)||0,address1,address2,city,state,zip,shippingNotes,paymentMethod,String(v.paymentReference||"").trim(),String(v.saleNotes||"").trim(),id);
+    db.prepare("UPDATE products SET status='sold', sold_at=?, customer_id=?, customer_name=?, phone=?, sale_price=?, ship_address1=?, ship_address2=?, ship_city=?, ship_state=?, ship_zip=?, shipping_notes=?, payment_method=?, payment_reference=? WHERE id=? AND status='available'").run(String(v.soldAt),customer.id,name,phone,Number(v.salePrice)||0,address1,address2,city,state,zip,shippingNotes,paymentMethod,String(v.paymentReference||"").trim(),id);
     return json(res, 200, get.get(id));
   }
   if (req.method === "POST" && action === "restock") {
