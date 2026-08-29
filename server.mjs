@@ -127,6 +127,11 @@ async function api(req, res, url) {
   const id = decodeURIComponent(match[1]); const action = match[2]; const current = get.get(id);
   if (!current) return json(res, 404, { error:"Product not found" });
   if (req.method === "DELETE" && !action) { db.prepare("DELETE FROM products WHERE id=?").run(id); res.writeHead(204); return res.end(); }
+  if (req.method === "PATCH" && !action) {
+    if (current.status !== "sold") return json(res,400,{error:"Transaction notes can only be added to sales."});
+    const v=await body(req); db.prepare("UPDATE products SET sale_notes=? WHERE id=?").run(String(v.saleNotes||"").trim(),id);
+    return json(res,200,get.get(id));
+  }
   if (req.method === "POST" && action === "sell") {
     const v = await body(req); if (!String(v.customerName||"").trim() || !v.soldAt) throw new Error("Customer name and sale date are required.");
     const paymentMethod=String(v.paymentMethod||"").trim();
@@ -135,7 +140,7 @@ async function api(req, res, url) {
     let customer = v.customerId ? db.prepare("SELECT id FROM customers WHERE id=?").get(String(v.customerId)) : findCustomerByName.get(name);
     if (!customer) { customer={id:crypto.randomUUID()}; addCustomer.run(customer.id,name,phone,address1,address2,city,state,zip,shippingNotes); }
     else db.prepare("UPDATE customers SET name=?,phone=?,address1=?,address2=?,city=?,state=?,zip=?,shipping_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(name,phone,address1,address2,city,state,zip,shippingNotes,customer.id);
-    db.prepare("UPDATE products SET status='sold', sold_at=?, customer_id=?, customer_name=?, phone=?, sale_price=?, ship_address1=?, ship_address2=?, ship_city=?, ship_state=?, ship_zip=?, shipping_notes=?, payment_method=?, payment_reference=? WHERE id=? AND status='available'").run(String(v.soldAt),customer.id,name,phone,Number(v.salePrice)||0,address1,address2,city,state,zip,shippingNotes,paymentMethod,String(v.paymentReference||"").trim(),id);
+    db.prepare("UPDATE products SET status='sold', sold_at=?, customer_id=?, customer_name=?, phone=?, sale_price=?, ship_address1=?, ship_address2=?, ship_city=?, ship_state=?, ship_zip=?, shipping_notes=?, payment_method=?, payment_reference=?, sale_notes=? WHERE id=? AND status='available'").run(String(v.soldAt),customer.id,name,phone,Number(v.salePrice)||0,address1,address2,city,state,zip,shippingNotes,paymentMethod,String(v.paymentReference||"").trim(),String(v.saleNotes||"").trim(),id);
     return json(res, 200, get.get(id));
   }
   if (req.method === "POST" && action === "restock") {
