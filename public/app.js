@@ -8,13 +8,16 @@ const fmtDateTime = (v) => v ? new Date(`${v.replace(" ","T")}Z`).toLocaleString
 const esc = (v = "") => String(v).replace(/[&<>'"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" })[c]);
 const ids = p => [["UID",p.uid],["SN",p.sn],["MAC",p.mac]].filter(([,v]) => v);
 const primaryId = p => ids(p)[0]?.[1] || "No identifier";
+function storageStatus(state,message) { const el=$("#storageStatus"); if(!el)return; el.className=`storage-status ${state}`; el.querySelector("b").textContent=message; }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { headers: { "content-type":"application/json" }, ...options });
-  if (response.status === 204) return null;
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Something went wrong.");
-  return data;
+  const writing=options.method&&options.method!=="GET"; if(writing)storageStatus("saving","Saving to database");
+  try { const response = await fetch(path, { headers: { "content-type":"application/json" }, ...options });
+    if (response.status === 204) { storageStatus("connected","Database connected"); return null; }
+    const data = await response.json();
+    if (!response.ok) { storageStatus("connected","Database connected"); const error=new Error(data.error||"Something went wrong."); error.databaseHealthy=true; throw error; }
+    storageStatus("connected","Database connected"); return data;
+  } catch(error) { if(!error.databaseHealthy)storageStatus("critical","Database error"); throw error; }
 }
 function toast(message) { const el=$("#toast"); el.textContent=message; el.hidden=false; clearTimeout(toast.timer); toast.timer=setTimeout(()=>el.hidden=true,2600); }
 function openModal(html) { $("#modalBody").innerHTML=html; $("#modal").showModal(); }
