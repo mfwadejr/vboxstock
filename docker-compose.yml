@@ -1,0 +1,11 @@
+services:
+  stockroom:
+    image: ghcr.io/mfwadejr/vseebox-stockroom:latest
+    container_name: vseebox-stockroom
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/data
+    environment:
+      - TZ=America/New_York
