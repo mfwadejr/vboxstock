@@ -38,7 +38,7 @@ for (const [name, definition] of [
   ["customer_id", "TEXT"], ["ship_address1", "TEXT NOT NULL DEFAULT ''"], ["ship_address2", "TEXT NOT NULL DEFAULT ''"],
   ["ship_city", "TEXT NOT NULL DEFAULT ''"], ["ship_state", "TEXT NOT NULL DEFAULT ''"], ["ship_zip", "TEXT NOT NULL DEFAULT ''"],
   ["shipping_notes", "TEXT NOT NULL DEFAULT ''"], ["payment_method", "TEXT NOT NULL DEFAULT ''"],
-  ["payment_reference", "TEXT NOT NULL DEFAULT ''"]
+  ["payment_reference", "TEXT NOT NULL DEFAULT ''"], ["sale_notes", "TEXT NOT NULL DEFAULT ''"]
 ]) if (!productColumnNames.has(name)) db.exec(`ALTER TABLE products ADD COLUMN ${name} ${definition}`);
 db.exec("CREATE INDEX IF NOT EXISTS idx_products_customer_id ON products(customer_id)");
 
@@ -68,7 +68,8 @@ db.exec("PRAGMA optimize");
 const columns = `id, uid, sn, mac, manufacturer, model, condition, received_at AS receivedAt, cost, notes,
   status, sold_at AS soldAt, customer_id AS customerId, customer_name AS customerName, phone, sale_price AS salePrice,
   ship_address1 AS shipAddress1, ship_address2 AS shipAddress2, ship_city AS shipCity, ship_state AS shipState,
-  ship_zip AS shipZip, shipping_notes AS shippingNotes, payment_method AS paymentMethod, payment_reference AS paymentReference`;
+  ship_zip AS shipZip, shipping_notes AS shippingNotes, payment_method AS paymentMethod, payment_reference AS paymentReference,
+  sale_notes AS saleNotes`;
 const list = db.prepare(`SELECT ${columns} FROM products ORDER BY CASE WHEN status='available' THEN received_at ELSE sold_at END DESC, rowid DESC`);
 const get = db.prepare(`SELECT ${columns} FROM products WHERE id=?`);
 const allowedModels = new Set(["V3 Plus", "V6 Plus", "V6 Pro", "V5 Pro"]);
@@ -103,6 +104,12 @@ async function api(req, res, url) {
   const id = decodeURIComponent(match[1]); const action = match[2]; const current = get.get(id);
   if (!current) return json(res, 404, { error:"Product not found" });
   if (req.method === "DELETE" && !action) { db.prepare("DELETE FROM products WHERE id=?").run(id); res.writeHead(204); return res.end(); }
+  if (req.method === "PATCH" && !action) {
+    if (current.status !== "sold") return json(res, 400, { error:"Sale notes can only be added to sold products." });
+    const v = await body(req);
+    db.prepare("UPDATE products SET sale_notes=? WHERE id=?").run(String(v.saleNotes||"").trim(),id);
+    return json(res, 200, get.get(id));
+  }
   if (req.method === "POST" && action === "sell") {
     const v = await body(req); if (!String(v.customerName||"").trim() || !v.soldAt) throw new Error("Customer name and sale date are required.");
     const paymentMethod=String(v.paymentMethod||"").trim();
@@ -111,12 +118,12 @@ async function api(req, res, url) {
     let customer = v.customerId ? db.prepare("SELECT id FROM customers WHERE id=?").get(String(v.customerId)) : findCustomerByName.get(name);
     if (!customer) { customer={id:crypto.randomUUID()}; addCustomer.run(customer.id,name,phone,address1,address2,city,state,zip,shippingNotes); }
     else db.prepare("UPDATE customers SET name=?,phone=?,address1=?,address2=?,city=?,state=?,zip=?,shipping_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(name,phone,address1,address2,city,state,zip,shippingNotes,customer.id);
-    db.prepare("UPDATE products SET status='sold', sold_at=?, customer_id=?, customer_name=?, phone=?, sale_price=?, ship_address1=?, ship_address2=?, ship_city=?, ship_state=?, ship_zip=?, shipping_notes=?, payment_method=?, payment_reference=? WHERE id=? AND status='available'").run(String(v.soldAt),customer.id,name,phone,Number(v.salePrice)||0,address1,address2,city,state,zip,shippingNotes,paymentMethod,String(v.paymentReference||"").trim(),id);
+    db.prepare("UPDATE products SET status='sold', sold_at=?, customer_id=?, customer_name=?, phone=?, sale_price=?, ship_address1=?, ship_address2=?, ship_city=?, ship_state=?, ship_zip=?, shipping_notes=?, payment_method=?, payment_reference=?, sale_notes=? WHERE id=? AND status='available'").run(String(v.soldAt),customer.id,name,phone,Number(v.salePrice)||0,address1,address2,city,state,zip,shippingNotes,paymentMethod,String(v.paymentReference||"").trim(),String(v.saleNotes||"").trim(),id);
     return json(res, 200, get.get(id));
   }
   if (req.method === "POST" && action === "restock") {
     const v = await body(req); if (!allowedConditions.has(v.condition) || !v.receivedAt) throw new Error("Condition and return date are required.");
-    db.prepare("UPDATE products SET status='available', condition=?, received_at=?, sold_at=NULL, customer_id=NULL, customer_name=NULL, phone=NULL, sale_price=NULL, ship_address1='', ship_address2='', ship_city='', ship_state='', ship_zip='', shipping_notes='', payment_method='', payment_reference='' WHERE id=? AND status='sold'").run(v.condition,String(v.receivedAt),id);
+    db.prepare("UPDATE products SET status='available', condition=?, received_at=?, sold_at=NULL, customer_id=NULL, customer_name=NULL, phone=NULL, sale_price=NULL, ship_address1='', ship_address2='', ship_city='', ship_state='', ship_zip='', shipping_notes='', payment_method='', payment_reference='', sale_notes='' WHERE id=? AND status='sold'").run(v.condition,String(v.receivedAt),id);
     return json(res, 200, get.get(id));
   }
   return json(res, 405, { error:"Method not allowed" });
