@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.3.1
+
+- Moved automatic-backup scheduling into the Database backups section.
+- Renamed the control to **Enable automatic backups**.
+- Added Every day and Weekly frequencies with a conditional weekday selector.
+- Replaced the numeric hour field with a clearer local-time selection.
+- Added last and next automatic-backup status information.
+- Renamed new scheduled files to `automatic-*.db` while retaining cleanup compatibility for earlier `scheduled-*.db` files.
+- Kept automatic retention isolated from manual, pre-upgrade, and pre-restore backups.
+
 ## 3.3.0
 
 - Added returning-customer autocomplete and server-side duplicate safeguards using customer IDs, normalized names, and phone numbers.
