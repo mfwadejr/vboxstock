@@ -10,7 +10,7 @@ const ids = p => [["UID",p.uid],["SN",p.sn],["MAC",p.mac]].filter(([,v]) => v);
 const primaryId = p => ids(p)[0]?.[1] || "No identifier";
 function storageStatus(state,message) { const el=$("#storageStatus"); if(!el)return; el.className=`storage-status ${state}`; el.querySelector("b").textContent=message; }
 const systemTheme=window.matchMedia("(prefers-color-scheme: dark)");
-function savedTheme(){try{return localStorage.getItem("stockroom-theme")||"system"}catch{return "system"}}
+function savedTheme(){try{return localStorage.getItem("vboxstock-theme")||"system"}catch{return "system"}}
 function applyTheme(choice=savedTheme()){const resolved=choice==="system"?(systemTheme.matches?"dark":"light"):choice;document.documentElement.dataset.theme=resolved;document.querySelector('meta[name="theme-color"]').content=resolved==="dark"?"#0d1320":"#f5f7fb";if($("#themeSelect"))$("#themeSelect").value=choice;}
 function decorateResponsiveTable(){const labels=[...document.querySelectorAll("#thead th")].map(th=>th.textContent.trim()||"Actions");document.querySelectorAll("#rows tr").forEach(row=>[...row.children].forEach((cell,index)=>cell.dataset.label=labels[index]||"Details"));}
 
@@ -127,7 +127,7 @@ $("#pagination").onclick=e=>{if(!e.target.dataset.page)return;state.page+=e.targ
 $("#rows").onclick=async e=>{const b=e.target.closest("button");if(!b)return;const id=b.dataset.sell||b.dataset.view||b.dataset.restock||b.dataset.delete||b.dataset.id,p=state.products.find(x=>x.id===id);if(!p)return;if(b.dataset.sell)sellForm(id);else if(b.dataset.view)viewSale(p);else if(b.dataset.customer!==undefined)viewCustomer(p);else if(b.dataset.restock)restockForm(p);else if(b.dataset.delete&&confirm(`Permanently delete this ${p.status==="sold"?"sale":"product"} record?`))await change(`/api/products/${encodeURIComponent(id)}`,"DELETE",null,"Record deleted.");};
 $("#modal .close").onclick=closeModal; $("#modal").onclick=e=>{if(e.target===$("#modal"))closeModal();};
 $("#logout").onclick=logout;
-$("#themeSelect").onchange=e=>{try{localStorage.setItem("stockroom-theme",e.target.value)}catch{}applyTheme(e.target.value);};
+$("#themeSelect").onchange=e=>{try{localStorage.setItem("vboxstock-theme",e.target.value)}catch{}applyTheme(e.target.value);};
 systemTheme.addEventListener?.("change",()=>{if(savedTheme()==="system")applyTheme("system")});
 $("#date").textContent=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
 applyTheme();
