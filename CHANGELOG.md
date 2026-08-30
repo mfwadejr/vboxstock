@@ -12,6 +12,7 @@
 - Added a ZimaOS-specific Compose definition with project metadata, persistent storage defaults, and dashboard icon.
 - Added the canonical container icon URL to the ZimaOS and Unraid templates and installation documentation.
 - Clarified platform-specific PUID and PGID values for general Docker, Docker Desktop, ZimaOS, and Unraid.
+- Changed the recommended host WebUI port to `8269` while retaining internal container port `3000`.
 
 ## 3.0.2
 

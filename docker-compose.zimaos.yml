@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     ports:
       - target: 3000
-        published: "3000"
+        published: "8269"
         protocol: tcp
     volumes:
       - type: bind
@@ -22,7 +22,7 @@ x-casaos:
   id: com.mfwadejr.vboxstock
   main: vboxstock
   index: /
-  port_map: "3000"
+  port_map: "8269"
   scheme: http
   icon: https://raw.githubusercontent.com/mfwadejr/vboxstock/main/public/assets/vboxstock-icon-512.png
   title:

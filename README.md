@@ -87,7 +87,7 @@ mkdir -p vboxstock-data
 docker run -d \
   --name vboxstock \
   --restart unless-stopped \
-  -p 3000:3000 \
+  -p 8269:3000 \
   -e TZ=America/New_York \
   -e PUID="$(id -u)" \
   -e PGID="$(id -g)" \
@@ -95,7 +95,7 @@ docker run -d \
   ghcr.io/mfwadejr/vboxstock:latest
 ```
 
-Open `http://YOUR-SERVER-IP:3000`, sign in with the initial credentials above, and change the password when prompted.
+Open `http://YOUR-SERVER-IP:8269`, sign in with the initial credentials above, and change the password when prompted. Port `8269` is the recommended host port; it maps to vBoxStock's internal container port `3000`.
 
 The host path mounted at `/data` is essential. Removing the container is safe when this mount remains intact; running without a persistent mount means the database can be lost when the container is replaced. `PUID` and `PGID` determine which host user and group own the database and backup files. They should match the account that owns the host-side data directory.
 
@@ -139,13 +139,14 @@ ZimaOS settings:
 | --- | --- |
 | Project name | `vboxstock` |
 | Image | `ghcr.io/mfwadejr/vboxstock:latest` |
-| WebUI port | `3000` |
+| WebUI host port | `8269` |
+| Internal container port | `3000` |
 | Container data path | `/data` |
 | ZimaOS host path | `/DATA/AppData/vboxstock` |
 | PUID | `1000` |
 | PGID | `1000` |
 
-After installation, open `http://YOUR-ZIMAOS-IP:3000`. The ZimaOS-specific Compose file supplies the icon automatically through its `x-casaos` metadata.
+After installation, open `http://YOUR-ZIMAOS-IP:8269`. The ZimaOS-specific Compose file supplies the icon automatically through its `x-casaos` metadata.
 
 ## Container icon
 
@@ -164,7 +165,8 @@ Use the included `vboxstock-unraid.xml` template or create a container with thes
 | Setting | Value |
 | --- | --- |
 | Repository | `ghcr.io/mfwadejr/vboxstock:latest` |
-| WebUI port | `3000` |
+| WebUI host port | `8269` |
+| Internal container port | `3000` |
 | Container data path | `/data` |
 | Suggested Unraid host path | `/mnt/user/appdata/vboxstock` |
 | Network mode | `bridge` |
@@ -223,6 +225,7 @@ docker exec -e RESET_ADMIN_PASSWORD=NewPassword123 -it vboxstock node server.mjs
 
 - Image: `ghcr.io/mfwadejr/vboxstock:latest`
 - Application port: `3000/tcp`
+- Recommended host port: `8269/tcp` (mapped to container port `3000`)
 - Persistent volume: `/data`
 - Runtime ownership: configurable with `PUID` and `PGID`; installation examples set platform-appropriate values. The image fallback is `99:100` for Unraid compatibility.
 - Health check: `GET /api/health`
