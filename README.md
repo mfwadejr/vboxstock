@@ -79,25 +79,40 @@ For use outside a trusted private network, place vBoxStock behind an HTTPS rever
 
 ## Quick start with Docker
 
+On a typical Linux Docker host, create a persistent data directory and run vBoxStock using the UID and GID of the current user:
+
 ```sh
+mkdir -p vboxstock-data
+
 docker run -d \
   --name vboxstock \
   --restart unless-stopped \
   -p 3000:3000 \
   -e TZ=America/New_York \
-  -e PUID=99 \
-  -e PGID=100 \
-  -v /your/persistent/path:/data \
+  -e PUID="$(id -u)" \
+  -e PGID="$(id -g)" \
+  -v "$PWD/vboxstock-data:/data" \
   ghcr.io/mfwadejr/vboxstock:latest
 ```
 
 Open `http://YOUR-SERVER-IP:3000`, sign in with the initial credentials above, and change the password when prompted.
 
-The host path mounted at `/data` is essential. Removing the container is safe when this mount remains intact; running without a persistent mount means the database can be lost when the container is replaced. `PUID` and `PGID` determine which host user and group own the mounted data. The defaults are Unraid's `nobody:users` IDs, `99:100`.
+The host path mounted at `/data` is essential. Removing the container is safe when this mount remains intact; running without a persistent mount means the database can be lost when the container is replaced. `PUID` and `PGID` determine which host user and group own the database and backup files. They should match the account that owns the host-side data directory.
+
+Typical identity settings:
+
+| Platform | PUID | PGID | Guidance |
+| --- | ---: | ---: | --- |
+| General Linux Docker | Output of `id -u` | Output of `id -g` | The quick-start command determines these automatically. |
+| Docker Desktop on macOS or Windows | `1000` | `1000` | Normally suitable because bind-mount permissions are mediated by Docker Desktop. |
+| ZimaOS | `1000` | `1000` | Included in `docker-compose.zimaos.yml`. |
+| Unraid | `99` | `100` | Maps to Unraid's standard `nobody:users` ownership. |
+
+These values control file ownership only; they are not vBoxStock login credentials.
 
 ## Docker Compose
 
-The included `docker-compose.yml` has the explicit project name `vboxstock` and stores data in `./data` alongside the Compose file:
+The included `docker-compose.yml` has the explicit project name `vboxstock` and stores data in `./data` alongside the Compose file. Its identity values can be overridden with `PUID`, `PGID`, and `TZ`; otherwise it uses the common general-Docker defaults `1000:1000` and `America/New_York`:
 
 ```sh
 docker compose up -d
