@@ -224,7 +224,7 @@ docker exec -e RESET_ADMIN_PASSWORD=NewPassword123 -it vboxstock node server.mjs
 - Image: `ghcr.io/mfwadejr/vboxstock:latest`
 - Application port: `3000/tcp`
 - Persistent volume: `/data`
-- Runtime ownership: configurable with `PUID` and `PGID` (`99:100` by default)
+- Runtime ownership: configurable with `PUID` and `PGID`; installation examples set platform-appropriate values. The image fallback is `99:100` for Unraid compatibility.
 - Health check: `GET /api/health`
 - Runtime: Node.js 22
 - Database: SQLite
