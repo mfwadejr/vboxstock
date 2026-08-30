@@ -43,9 +43,17 @@ General inventory tools can be larger and more complicated than a small reseller
 
 ![vBoxStock sign-in page](docs/screenshots/login.jpg)
 
-### User administration, backups, and audit history
+### Product model administration
 
-![vBoxStock Admin page](docs/screenshots/admin.jpg)
+![vBoxStock product model administration](docs/screenshots/admin.jpg)
+
+### User administration and database backups
+
+![vBoxStock user administration and database backups](docs/screenshots/admin-users-backups.jpg)
+
+### Audit history
+
+![vBoxStock audit history](docs/screenshots/admin-audit.jpg)
 
 ## Accounts and security
 
