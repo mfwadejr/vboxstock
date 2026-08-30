@@ -1,0 +1,42 @@
+name: vboxstock
+
+services:
+  vboxstock:
+    image: ghcr.io/mfwadejr/vboxstock:latest
+    container_name: vboxstock
+    restart: unless-stopped
+    ports:
+      - target: 3000
+        published: "3000"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /DATA/AppData/vboxstock
+        target: /data
+    environment:
+      TZ: America/New_York
+      PUID: "1000"
+      PGID: "1000"
+
+x-casaos:
+  id: com.mfwadejr.vboxstock
+  main: vboxstock
+  index: /
+  port_map: "3000"
+  scheme: http
+  icon: https://raw.githubusercontent.com/mfwadejr/vboxstock/main/public/assets/vboxstock-icon-512.png
+  title:
+    en_US: vBoxStock
+  tagline:
+    en_US: Self-hosted vSeeBox inventory and sales tracking
+  description:
+    en_US: Track individually identifiable vSeeBox inventory from receipt through sale, including customers, payments, shipping, notes, users, and backups.
+  author: mfwadejr
+  developer: mfwadejr
+  category: Productivity
+  architectures:
+    - amd64
+  version: "3.1.0"
+  update_at: "2026-08-30"
+  release_notes:
+    en_US: Added administrator-managed product models with archival and historical preservation.

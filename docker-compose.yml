@@ -1,3 +1,5 @@
+name: vboxstock
+
 services:
   vboxstock:
     image: ghcr.io/mfwadejr/vboxstock:latest

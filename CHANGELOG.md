@@ -9,6 +9,8 @@
 - Added automatic pre-migration database backups for upgrades from the fixed model list.
 - Added responsive, light, and dark theme styling for model management.
 - Added API and migration regression coverage.
+- Added a ZimaOS-specific Compose definition with project metadata, persistent storage defaults, and dashboard icon.
+- Added the canonical container icon URL to the ZimaOS and Unraid templates and installation documentation.
 
 ## 3.0.2
 

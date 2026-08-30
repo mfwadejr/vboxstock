@@ -89,11 +89,13 @@ The host path mounted at `/data` is essential. Removing the container is safe wh
 
 ## Docker Compose
 
-The included `docker-compose.yml` stores data in `./data` alongside the Compose file:
+The included `docker-compose.yml` has the explicit project name `vboxstock` and stores data in `./data` alongside the Compose file:
 
 ```sh
 docker compose up -d
 ```
+
+The `docker run` example above is a terminal command. Do not paste it into a Compose or YAML editor; use the Compose file instead.
 
 To update later:
 
@@ -101,6 +103,36 @@ To update later:
 docker compose pull
 docker compose up -d
 ```
+
+## ZimaOS
+
+Use [`docker-compose.zimaos.yml`](docker-compose.zimaos.yml) with ZimaOS's custom app/Compose installer. It includes the required `vboxstock` project name, ZimaOS dashboard metadata, the application icon, and a persistent data mapping to `/DATA/AppData/vboxstock`.
+
+If entering the configuration manually, replace any ZimaOS-generated `<your project name>` placeholder with `vboxstock`. The angle brackets and placeholder text must not remain in the saved YAML. Do not paste the `docker run` command into the YAML editor.
+
+ZimaOS settings:
+
+| Setting | Value |
+| --- | --- |
+| Project name | `vboxstock` |
+| Image | `ghcr.io/mfwadejr/vboxstock:latest` |
+| WebUI port | `3000` |
+| Container data path | `/data` |
+| ZimaOS host path | `/DATA/AppData/vboxstock` |
+| PUID | `1000` |
+| PGID | `1000` |
+
+After installation, open `http://YOUR-ZIMAOS-IP:3000`. The ZimaOS-specific Compose file supplies the icon automatically through its `x-casaos` metadata.
+
+## Container icon
+
+Use this direct PNG URL in ZimaOS, Unraid, Portainer, or another container dashboard that accepts a custom icon:
+
+```text
+https://raw.githubusercontent.com/mfwadejr/vboxstock/main/public/assets/vboxstock-icon-512.png
+```
+
+The included ZimaOS Compose file and Unraid XML template already contain this URL.
 
 ## Unraid
 
