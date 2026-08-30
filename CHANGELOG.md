@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.3.0
+
+- Added returning-customer autocomplete and server-side duplicate safeguards using customer IDs, normalized names, and phone numbers.
+- Expanded sale correction to include customer, phone, sale date, price, payment method, payment reference, fulfillment, tracking, warranty, and notes.
+- Added model, payment, fulfillment, warranty-status, and date-range filters.
+- Added CSV exports for inventory, sales, customers, warranties, and the administrator audit log.
+- Added configurable daily SQLite backups with local-time scheduling and automatic retention pruning.
+- Added an Admin diagnostics panel with application and schema versions, Node.js version, database size, data-directory writability, storage capacity, time zone, and backup health.
+- Prevented duplicate sale submissions while a save is in progress.
+- Corrected the delivery-exception status value shared by the UI and API.
+- Expanded API tests for full sale correction, customer reuse, exports, diagnostics, and backup settings.
+
 ## 3.2.0
 
 - Added sale fulfillment methods for Shipped, Dropped Off, Installed At, and Meet with context-sensitive fields and validation.

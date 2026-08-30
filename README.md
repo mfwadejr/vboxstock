@@ -33,10 +33,14 @@ General inventory tools can be larger and more complicated than a small reseller
 - Record Cash, Venmo, or PayPal payments with an optional reference.
 - Attach transaction notes to a sale and time-stamped support notes to a customer.
 - Browse inventory, sales, and customers in searchable 10-record pages.
+- Filter records by model and date, with additional payment, fulfillment, and warranty filters for sales.
+- Export inventory, sales, customers, warranty configuration, and audit history to CSV.
 - View sale details and complete purchase history for each customer.
+- Select returning customers during a sale and safely correct all transaction details afterward.
 - Void a sale and return the device to available inventory.
 - Use Admin and Read-Only accounts with server-enforced permissions.
 - Create, download, restore, and delete SQLite backups from the Admin page.
+- Schedule automatic daily backups with configurable retention and review storage/database diagnostics.
 - Review an audit log of authentication, account administration, backups, and data changes.
 - Keep all persistent application data in one mounted directory.
 
@@ -57,6 +61,14 @@ General inventory tools can be larger and more complicated than a small reseller
 ### Warranty administration
 
 ![vBoxStock warranty period administration](docs/screenshots/admin-warranties.png)
+
+### Sales filters and CSV export
+
+![vBoxStock sales filters and export controls](docs/screenshots/sales-filters.png)
+
+### System diagnostics and scheduled backups
+
+![vBoxStock system diagnostics and scheduled backup settings](docs/screenshots/admin-system-backups.png)
 
 ### User administration and database backups
 
@@ -209,6 +221,10 @@ A fresh installation creates an empty inventory, sales history, and customer lis
 
 The Admin page can create a transactionally consistent snapshot, download it to another device, restore a local snapshot, or upload and restore a downloaded copy. A pre-restore snapshot is created automatically before the active database is replaced.
 
+Daily automatic backups can be enabled under **Admin → System and data tools**. Choose a local-time hour from `0` through `23` and retain between 1 and 365 scheduled snapshots. Retention applies only to files named `scheduled-*.db`; manual, pre-upgrade, and pre-restore backups are never removed automatically. The application checks the schedule every 15 minutes and creates at most one scheduled backup per calendar day.
+
+The same section reports application and database-schema versions, Node.js version, database size, `/data` writability, free disk space, configured time zone, and the latest backup. These checks are local to the container and do not transmit system information anywhere.
+
 ## Product model catalog
 
 Administrators manage product models from **Admin → Product models**. Active models appear alphabetically in the Receive Product dropdown. Archiving a model removes it from that dropdown but does not change existing inventory, sales, customer history, or reports. Available units that use an archived model can still be sold, and an archived model can be reactivated at any time.
@@ -223,7 +239,15 @@ Shipped sales support UPS, FedEx, USPS, or Other, an optional tracking number, a
 
 Administrators manage reusable warranty periods under **Admin → Warranty periods**. The initial choices are No Warranty, 30 Days, 60 Days, 90 Days, and 1 Year. Custom durations can use days, months, or years, and one active period is the default for new sales. Once used, a period is preserved for historical accuracy and can be archived but not edited or deleted. Each sale stores the selected warranty and calculated end date as a snapshot; changing the default does not rewrite previous sales.
 
-The model catalog is stored in `vboxstock.db`, so it is included automatically in every backup and restore. Upgrading from a release with the original fixed model list migrates the existing database in place and first creates a `pre-model-catalog-*.db` safety backup in `/data/backups`.
+### Customer matching, filters, and exports
+
+The sale form suggests existing customers by name and phone number. Selecting a suggestion reuses its customer ID, while the server also normalizes phone digits and names to reduce accidental duplicates. Meetup and drop-off locations remain sale-specific and do not overwrite a customer's permanent address.
+
+Administrators can correct every sale field later, including customer, phone, date, price, payment, fulfillment, tracking, warranty, and notes. Changing the sale date recalculates the selected warranty end date. Inventory and sales can be filtered by model and date; sales also support payment, fulfillment, and warranty-status filters.
+
+CSV downloads are available for inventory, sales, customers, and warranty configuration. Administrators can additionally export the security audit log. Exports are generated directly from the active database and do not use an external reporting service.
+
+The model catalog is stored in `vboxstock.db`, so it is included automatically in every backup and restore. Schema-changing upgrades migrate the existing database in place and create a pre-upgrade safety backup in `/data/backups` when required.
 
 Backups contain customer information and password hashes. Store downloaded copies securely. Restoring a database also restores the user accounts contained in that backup and signs out every active session. An older backup without user accounts starts the first-login `admin` / `admin` setup flow.
 
