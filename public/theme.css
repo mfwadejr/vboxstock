@@ -23,7 +23,8 @@ th{background:var(--surface-table);color:var(--muted-2)}th,td,.records nav,.back
 .records nav .tab,.customer-link{color:var(--muted)}.records nav .tab.active{color:var(--blue);border-color:var(--blue)}.tab i{background:var(--surface-soft)}
 .row-actions button,.customer-purchases button{background:var(--blue-soft);color:var(--blue-text)}.row-actions .danger,.customer-notes article>button,.delete-backup,.backup-list .delete-backup{background:var(--danger-soft);color:var(--danger)}
 .pill{background:var(--green-soft);color:var(--green)}.detail-card{background:var(--surface-soft);border-color:var(--border)}
-.customer-notes article,.backup-list,.user-list,.audit-list{border-color:var(--border)}
+.customer-notes article,.backup-list,.user-list,.model-list,.audit-list{border-color:var(--border)}
+.model-list article{border-color:var(--border)}.model-summary small{color:var(--muted)}.model-status.active{background:var(--green-soft);color:var(--green)}.model-status.archived{background:var(--surface-soft);color:var(--muted)}
 .note-category{background:var(--blue-soft);color:var(--blue-text)}.backup-warning{background:var(--warning-soft);border-color:color-mix(in srgb,var(--warning) 40%,transparent);color:var(--warning)}
 .auth-screen{background:linear-gradient(145deg,color-mix(in srgb,var(--blue) 10%,var(--page)),var(--page))}.auth-card{box-shadow:0 22px 60px var(--shadow)}
 dialog{max-height:min(90dvh,900px);overflow:auto}dialog::backdrop{background:#050914aa}.close{color:var(--muted)}
@@ -36,7 +37,7 @@ button,.button,input,select,textarea{-webkit-tap-highlight-color:transparent}but
 @media (pointer:coarse){button,.button,.upload-backup,.user-menu select{min-height:44px}}
 @media (max-width:1050px){
   header{gap:14px;padding-inline:3vw}.brand span{display:none}.actions{gap:6px}.actions button{padding-inline:10px}.user-menu{padding-left:10px;gap:7px}.user-menu select{width:105px}
-  .inline-user-form{grid-template-columns:1fr 1fr}.audit-list article{grid-template-columns:120px 160px 1fr}
+  .inline-user-form{grid-template-columns:1fr 1fr}.inline-model-form{grid-template-columns:1fr auto}.audit-list article{grid-template-columns:120px 160px 1fr}
 }
 @media (max-width:820px){
   header{position:relative;display:grid;grid-template-columns:auto 1fr auto;height:auto;padding:12px max(14px,env(safe-area-inset-right)) 12px max(14px,env(safe-area-inset-left));gap:10px}
@@ -47,7 +48,7 @@ button,.button,input,select,textarea{-webkit-tap-highlight-color:transparent}but
   .table-wrap{overflow:visible}table{display:block;min-width:0}thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}tbody{display:grid;gap:10px;padding:10px;background:var(--page)}tr{display:grid;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}td{display:grid;grid-template-columns:minmax(92px,34%) 1fr;gap:10px;align-items:start;padding:11px 13px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}td:last-child{border-bottom:0}td::before{content:attr(data-label);font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-2)}td:empty{display:none}.row-actions{flex-wrap:wrap}.row-actions button{flex:1;min-width:95px}
   #empty{background:var(--surface);padding:45px 20px}#pagination{background:var(--surface);padding:14px 12px}.address-grid{grid-template-columns:1fr}.form-row,.scan{grid-template-columns:1fr}
   dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 20px);padding:22px 18px;margin:10px}.form-actions{flex-wrap:wrap}.form-actions button{min-width:110px}
-  #adminPanel{padding:15px 12px}.admin-page{gap:26px}.admin-section{gap:13px}.inline-user-form{grid-template-columns:1fr}.user-list article,.backup-list article{align-items:stretch}.user-list article>div:last-child,.backup-list article>div:last-child{display:grid;grid-template-columns:1fr 1fr}.user-list button,.backup-list button,.backup-list a.button{justify-content:center;text-align:center}.audit-list article{grid-template-columns:1fr;gap:3px}.audit-list{max-height:55vh}
+  #adminPanel{padding:15px 12px}.admin-page{gap:26px}.admin-section{gap:13px}.inline-user-form,.inline-model-form{grid-template-columns:1fr}.user-list article,.model-list article,.backup-list article{align-items:stretch}.user-list article>div:last-child,.model-actions,.backup-list article>div:last-child{display:grid;grid-template-columns:1fr 1fr}.user-list button,.model-list button,.backup-list button,.backup-list a.button{justify-content:center;text-align:center}.audit-list article{grid-template-columns:1fr;gap:3px}.audit-list{max-height:55vh}
   .auth-screen{padding:16px}.auth-card{padding:25px 20px}.auth-brand span{display:inline}
 }
 @media (max-width:430px){
