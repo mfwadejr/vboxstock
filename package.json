@@ -1,6 +1,6 @@
 {
   "name": "vseebox-stockroom",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "private": true,
   "type": "module",
   "engines": { "node": ">=22.13.0" },

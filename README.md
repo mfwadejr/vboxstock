@@ -1,16 +1,18 @@
-# vSeeBox Stockroom
+<p align="center"><img src="public/assets/vboxstock-icon-512.png" width="150" alt="vBoxStock cardboard box and inventory chart icon"></p>
+
+# vBoxStock
 
 A small, self-hosted inventory and sales tracker for people who buy, stock, and resell vSeeBox devices.
 
-Stockroom replaces spreadsheets and handwritten lists with one browser-based place to track each physical unit from receipt through sale. It records the identifiers that matter for electronics inventory—UID, serial number, and MAC address—along with condition, cost, customer, payment, shipping, and support history.
+vBoxStock replaces spreadsheets and handwritten lists with one browser-based place to track each physical unit from receipt through sale. It records the identifiers that matter for electronics inventory—UID, serial number, and MAC address—along with condition, cost, customer, payment, shipping, and support history.
 
-It was developed with Unraid in mind, but Unraid is not required. Stockroom is a standard OCI/Docker container and can run on a Docker-compatible Linux server, NAS, home lab, or cloud VM. The application is self-contained: the web server and SQLite database live inside one image, while durable data is stored in a mounted `/data` directory.
+It was developed with Unraid in mind, but Unraid is not required. vBoxStock is a standard OCI/Docker container and can run on a Docker-compatible Linux server, NAS, home lab, or cloud VM. The application is self-contained: the web server and SQLite database live inside one image, while durable data is stored in a mounted `/data` directory.
 
-![Stockroom inventory dashboard](docs/screenshots/dashboard.jpg)
+![vBoxStock inventory dashboard](docs/screenshots/dashboard.jpg)
 
-## Why Stockroom exists
+## Why vBoxStock exists
 
-General inventory tools can be larger and more complicated than a small reseller needs. Stockroom focuses on a straightforward workflow:
+General inventory tools can be larger and more complicated than a small reseller needs. vBoxStock focuses on a straightforward workflow:
 
 1. Receive an individually identifiable device into inventory.
 2. Record its cost, model, condition, and notes.
@@ -38,11 +40,11 @@ General inventory tools can be larger and more complicated than a small reseller
 
 ### Secure sign-in
 
-![Stockroom sign-in page](docs/screenshots/login.jpg)
+![vBoxStock sign-in page](docs/screenshots/login.jpg)
 
 ### User administration, backups, and audit history
 
-![Stockroom Admin page](docs/screenshots/admin.jpg)
+![vBoxStock Admin page](docs/screenshots/admin.jpg)
 
 ## Accounts and security
 
@@ -51,7 +53,7 @@ On a new installation—or an upgraded installation with no configured accounts�
 - **Username:** `admin`
 - **Password:** `admin`
 
-Stockroom immediately requires a new password and blocks access to application data until it is changed. Passwords must contain at least 8 characters and are stored as salted `scrypt` hashes, never as readable text.
+vBoxStock immediately requires a new password and blocks access to application data until it is changed. Passwords must contain at least 8 characters and are stored as salted `scrypt` hashes, never as readable text.
 
 | Capability | Admin | Read-Only |
 | --- | :---: | :---: |
@@ -64,7 +66,7 @@ Stockroom immediately requires a new password and blocks access to application d
 
 Additional protections include HTTP-only SameSite session cookies, a 12-hour inactivity timeout, login throttling, required password confirmation before a restore, automatic session invalidation after a restore, and protection against disabling or deleting the final enabled administrator.
 
-For use outside a trusted private network, place Stockroom behind an HTTPS reverse proxy. The application does not provide TLS certificates directly.
+For use outside a trusted private network, place vBoxStock behind an HTTPS reverse proxy. The application does not provide TLS certificates directly.
 
 ## Quick start with Docker
 
@@ -113,7 +115,7 @@ Open the container's WebUI after installation. Updates can be applied with **For
 
 ## Data and backups
 
-Stockroom uses SQLite and does not require MySQL, PostgreSQL, Redis, or another service. Persistent content is stored under `/data`:
+vBoxStock uses SQLite and does not require MySQL, PostgreSQL, Redis, or another service. Persistent content is stored under `/data`:
 
 - `/data/stockroom.db` — active application database
 - `/data/backups/` — locally retained database snapshots
@@ -148,7 +150,7 @@ docker exec -e RESET_ADMIN_PASSWORD=NewPassword123 -it vseebox-stockroom node se
 
 ## Intended scope
 
-Stockroom is designed for a single reseller or small team operating one shared installation. It is not an accounting platform, payment processor, shipping-label service, or public storefront. Payment details are records of how a sale was accepted; Stockroom does not connect to Cash, Venmo, or PayPal or move money itself.
+vBoxStock is designed for a single reseller or small team operating one shared installation. It is not an accounting platform, payment processor, shipping-label service, or public storefront. Payment details are records of how a sale was accepted; vBoxStock does not connect to Cash, Venmo, or PayPal or move money itself.
 
 ## Updating and versioning
 
