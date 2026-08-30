@@ -1,0 +1,7 @@
+.git
+data
+*.zip
+test
+README.md
+docker-compose.yml
+vboxstock-unraid.xml

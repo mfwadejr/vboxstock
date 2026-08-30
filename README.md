@@ -72,12 +72,12 @@ For use outside a trusted private network, place vBoxStock behind an HTTPS rever
 
 ```sh
 docker run -d \
-  --name vseebox-stockroom \
+  --name vboxstock \
   --restart unless-stopped \
   -p 3000:3000 \
   -e TZ=America/New_York \
   -v /your/persistent/path:/data \
-  ghcr.io/mfwadejr/vseebox-stockroom:latest
+  ghcr.io/mfwadejr/vboxstock:latest
 ```
 
 Open `http://YOUR-SERVER-IP:3000`, sign in with the initial credentials above, and change the password when prompted.
@@ -101,14 +101,14 @@ docker compose up -d
 
 ## Unraid
 
-Use the included `stockroom-unraid.xml` template or create a container with these settings:
+Use the included `vboxstock-unraid.xml` template or create a container with these settings:
 
 | Setting | Value |
 | --- | --- |
-| Repository | `ghcr.io/mfwadejr/vseebox-stockroom:latest` |
+| Repository | `ghcr.io/mfwadejr/vboxstock:latest` |
 | WebUI port | `3000` |
 | Container data path | `/data` |
-| Suggested Unraid host path | `/mnt/user/appdata/vseebox-stockroom` |
+| Suggested Unraid host path | `/mnt/user/appdata/vboxstock` |
 | Network mode | `bridge` |
 
 Open the container's WebUI after installation. Updates can be applied with **Force Update** or through the CA Auto Update Applications plugin.
@@ -117,7 +117,7 @@ Open the container's WebUI after installation. Updates can be applied with **For
 
 vBoxStock uses SQLite and does not require MySQL, PostgreSQL, Redis, or another service. Persistent content is stored under `/data`:
 
-- `/data/stockroom.db` — active application database
+- `/data/vboxstock.db` — active application database
 - `/data/backups/` — locally retained database snapshots
 
 The Admin page can create a transactionally consistent snapshot, download it to another device, restore a local snapshot, or upload and restore a downloaded copy. A pre-restore snapshot is created automatically before the active database is replaced.
@@ -129,18 +129,18 @@ Backups contain customer information and password hashes. Store downloaded copie
 If every administrator is inaccessible, run this on the Docker host, replacing the container name, username, and temporary password if needed:
 
 ```sh
-docker exec -it vseebox-stockroom node server.mjs reset-admin admin NewPassword123
+docker exec -it vboxstock node server.mjs reset-admin admin NewPassword123
 ```
 
 The account is enabled as an administrator and must change the supplied password on its next login. The reset is recorded in the audit log. Because command arguments may briefly appear in process listings, the password can instead be supplied through an environment variable:
 
 ```sh
-docker exec -e RESET_ADMIN_PASSWORD=NewPassword123 -it vseebox-stockroom node server.mjs reset-admin admin
+docker exec -e RESET_ADMIN_PASSWORD=NewPassword123 -it vboxstock node server.mjs reset-admin admin
 ```
 
 ## Container details
 
-- Image: `ghcr.io/mfwadejr/vseebox-stockroom:latest`
+- Image: `ghcr.io/mfwadejr/vboxstock:latest`
 - Application port: `3000/tcp`
 - Persistent volume: `/data`
 - Health check: `GET /api/health`

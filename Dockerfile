@@ -1,5 +1,5 @@
 FROM node:22-alpine
-LABEL org.opencontainers.image.source="https://github.com/mfwadejr/vseebox-stockroom"
+LABEL org.opencontainers.image.source="https://github.com/mfwadejr/vboxstock"
 LABEL org.opencontainers.image.description="Self-contained vSeeBox inventory and sales tracker"
 WORKDIR /app
 COPY package.json server.mjs ./

@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>vBoxStock</Name><Repository>ghcr.io/mfwadejr/vboxstock:latest</Repository><Registry>https://github.com/mfwadejr/vboxstock/pkgs/container/vboxstock</Registry>
+  <Network>bridge</Network><Shell>sh</Shell><Privileged>false</Privileged>
+  <Support></Support><Project></Project><Overview>Self-contained vSeeBox inventory and sales tracker with an embedded SQLite database.</Overview>
+  <Category>Tools:</Category><WebUI>http://[IP]:[PORT:3000]/</WebUI><TemplateURL></TemplateURL><Icon></Icon>
+  <Config Name="Web UI Port" Target="3000" Default="3000" Mode="tcp" Description="vBoxStock web interface" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="App Data" Target="/data" Default="/mnt/user/appdata/vboxstock" Mode="rw" Description="SQLite database and durable application data" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/vboxstock</Config>
+  <Config Name="Timezone" Target="TZ" Default="America/New_York" Mode="" Description="Container timezone" Type="Variable" Display="advanced" Required="false" Mask="false">America/New_York</Config>
+</Container>

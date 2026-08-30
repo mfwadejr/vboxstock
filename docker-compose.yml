@@ -1,7 +1,7 @@
 services:
-  stockroom:
-    image: ghcr.io/mfwadejr/vseebox-stockroom:latest
-    container_name: vseebox-stockroom
+  vboxstock:
+    image: ghcr.io/mfwadejr/vboxstock:latest
+    container_name: vboxstock
     restart: unless-stopped
     ports:
       - "3000:3000"
