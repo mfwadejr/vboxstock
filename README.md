@@ -23,7 +23,8 @@ General inventory tools can be larger and more complicated than a small reseller
 ## Highlights
 
 - Track available and sold devices by UID, serial number, or MAC address.
-- Support vSeeBox V3 Plus, V5 Pro, V6 Plus, and V6 Pro inventory.
+- Start with vSeeBox V3 Plus, V5 Pro, V6 Plus, and V6 Pro, then add any additional model you carry.
+- Manage the model catalog from the Admin page: rename unused models, archive end-of-life models, reactivate them later, or delete models that have never been used.
 - Record New, Used, or Refurbished condition and purchase cost.
 - Capture customer name, phone number, shipped-to address, and shipping notes.
 - Record Cash, Venmo, or PayPal payments with an optional reference.
@@ -60,7 +61,7 @@ vBoxStock immediately requires a new password and blocks access to application d
 | View and search inventory, sales, customers, and notes | Yes | Yes |
 | Receive inventory and record sales | Yes | No |
 | Edit notes, void sales, or delete records | Yes | No |
-| Manage users and view the audit log | Yes | No |
+| Manage product models, users, and view the audit log | Yes | No |
 | Create, download, delete, or restore backups | Yes | No |
 | Access the Admin page | Yes | No |
 
@@ -138,6 +139,14 @@ vBoxStock uses SQLite and does not require MySQL, PostgreSQL, Redis, or another 
 A fresh installation creates an empty inventory, sales history, and customer list. Only the initial `admin` account is created. Replacing or upgrading the container preserves existing records because `vboxstock.db` remains in the mounted host folder. Removing or changing the `/data` mapping starts a separate empty database, so keep that mapping consistent across upgrades.
 
 The Admin page can create a transactionally consistent snapshot, download it to another device, restore a local snapshot, or upload and restore a downloaded copy. A pre-restore snapshot is created automatically before the active database is replaced.
+
+## Product model catalog
+
+Administrators manage product models from **Admin → Product models**. Active models appear alphabetically in the Receive Product dropdown. Archiving a model removes it from that dropdown but does not change existing inventory, sales, customer history, or reports. Available units that use an archived model can still be sold, and an archived model can be reactivated at any time.
+
+Model names are unique regardless of capitalization and may contain up to 60 characters. An unused model can be renamed or permanently deleted. Once a model has been used by an inventory or sales record, its name is preserved for historical accuracy; archive it and create a new model instead of renaming or deleting it. The Admin page displays separate available and sold usage counts before an archive is confirmed.
+
+The model catalog is stored in `vboxstock.db`, so it is included automatically in every backup and restore. Upgrading from a release with the original fixed model list migrates the existing database in place and first creates a `pre-model-catalog-*.db` safety backup in `/data/backups`.
 
 Backups contain customer information and password hashes. Store downloaded copies securely. Restoring a database also restores the user accounts contained in that backup and signs out every active session. An older backup without user accounts starts the first-login `admin` / `admin` setup flow.
 
