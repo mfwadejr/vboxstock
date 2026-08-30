@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 test("authentication, roles, inventory, sale, and restock", async t => {
-  const data=await mkdtemp(join(tmpdir(),"stockroom-")),port=31991;
+  const data=await mkdtemp(join(tmpdir(),"vboxstock-")),port=31991;
   const processHandle=spawn(process.execPath,["server.mjs"],{cwd:import.meta.dirname+"/..",env:{...process.env,DATA_DIR:data,PORT:String(port)}});
   t.after(()=>processHandle.kill());
   await new Promise((resolve,reject)=>{processHandle.stdout.on("data",chunk=>String(chunk).includes("listening")&&resolve());processHandle.on("error",reject)});
