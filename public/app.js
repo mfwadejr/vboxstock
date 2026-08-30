@@ -9,6 +9,10 @@ const esc = (v = "") => String(v).replace(/[&<>'"]/g, c => ({ "&":"&amp;", "<":"
 const ids = p => [["UID",p.uid],["SN",p.sn],["MAC",p.mac]].filter(([,v]) => v);
 const primaryId = p => ids(p)[0]?.[1] || "No identifier";
 function storageStatus(state,message) { const el=$("#storageStatus"); if(!el)return; el.className=`storage-status ${state}`; el.querySelector("b").textContent=message; }
+const systemTheme=window.matchMedia("(prefers-color-scheme: dark)");
+function savedTheme(){try{return localStorage.getItem("stockroom-theme")||"system"}catch{return "system"}}
+function applyTheme(choice=savedTheme()){const resolved=choice==="system"?(systemTheme.matches?"dark":"light"):choice;document.documentElement.dataset.theme=resolved;document.querySelector('meta[name="theme-color"]').content=resolved==="dark"?"#0d1320":"#f5f7fb";if($("#themeSelect"))$("#themeSelect").value=choice;}
+function decorateResponsiveTable(){const labels=[...document.querySelectorAll("#thead th")].map(th=>th.textContent.trim()||"Actions");document.querySelectorAll("#rows tr").forEach(row=>[...row.children].forEach((cell,index)=>cell.dataset.label=labels[index]||"Details"));}
 
 async function api(path, options = {}) {
   const writing=options.method&&options.method!=="GET"; if(writing)storageStatus("saving","Saving to database");
@@ -52,6 +56,7 @@ function render() {
   const start=(state.page-1)*PAGE_SIZE, rows=all.slice(start,start+PAGE_SIZE);
   $("#thead").innerHTML=state.tab==="available"?"<tr><th>Product</th><th>UID / SN / MAC</th><th>Received</th><th>Cost</th><th>Status</th><th></th></tr>":state.tab==="customers"?"<tr><th>Customer</th><th>Phone</th><th>Purchases</th><th>Last purchase</th><th>Total spent</th><th></th></tr>":"<tr><th>Product</th><th>Customer</th><th>UID / SN / MAC</th><th>Sold</th><th>Payment</th><th>Sale price</th><th></th></tr>";
   $("#rows").innerHTML=rows.map(p=>state.tab==="available"?inventoryRow(p):state.tab==="customers"?customerRow(p):saleRow(p)).join("");
+  decorateResponsiveTable();
   $("#empty").hidden=Boolean(rows.length); $("#empty").textContent=state.query?"No records match your search.":state.tab==="available"?"No products are available.":state.tab==="customers"?"Customer records will appear after the first sale.":"No sales have been recorded.";
   $("#pagination").innerHTML=all.length?`<span>Showing ${start+1}–${Math.min(start+PAGE_SIZE,all.length)} of ${all.length}</span><div><button data-page="prev" ${state.page===1?"disabled":""}>Previous</button><strong>Page ${state.page} of ${pages}</strong><button data-page="next" ${state.page===pages?"disabled":""}>Next</button></div>`:"";
 }
@@ -121,5 +126,8 @@ $("#pagination").onclick=e=>{if(!e.target.dataset.page)return;state.page+=e.targ
 $("#rows").onclick=async e=>{const b=e.target.closest("button");if(!b)return;const id=b.dataset.sell||b.dataset.view||b.dataset.restock||b.dataset.delete||b.dataset.id,p=state.products.find(x=>x.id===id);if(!p)return;if(b.dataset.sell)sellForm(id);else if(b.dataset.view)viewSale(p);else if(b.dataset.customer!==undefined)viewCustomer(p);else if(b.dataset.restock)restockForm(p);else if(b.dataset.delete&&confirm(`Permanently delete this ${p.status==="sold"?"sale":"product"} record?`))await change(`/api/products/${encodeURIComponent(id)}`,"DELETE",null,"Record deleted.");};
 $("#modal .close").onclick=closeModal; $("#modal").onclick=e=>{if(e.target===$("#modal"))closeModal();};
 $("#logout").onclick=logout;
+$("#themeSelect").onchange=e=>{try{localStorage.setItem("stockroom-theme",e.target.value)}catch{}applyTheme(e.target.value);};
+systemTheme.addEventListener?.("change",()=>{if(savedTheme()==="system")applyTheme("system")});
 $("#date").textContent=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+applyTheme();
 initialize();
