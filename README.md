@@ -16,7 +16,7 @@ General inventory tools can be larger and more complicated than a small reseller
 
 1. Receive an individually identifiable device into inventory.
 2. Record its cost, model, condition, and notes.
-3. Complete a sale with customer, payment, shipping, and transaction details.
+3. Complete a sale with customer, payment, fulfillment, warranty, and transaction details.
 4. Revisit the customer or sale later for support and follow-up.
 5. Back up the complete business record without managing a separate database server.
 
@@ -26,7 +26,10 @@ General inventory tools can be larger and more complicated than a small reseller
 - Start with vSeeBox V3 Plus, V5 Pro, V6 Plus, and V6 Pro, then add any additional model you carry.
 - Manage the model catalog from the Admin page: rename unused models, archive end-of-life models, reactivate them later, or delete models that have never been used.
 - Record New, Used, or Refurbished condition and purchase cost.
-- Capture customer name, phone number, shipped-to address, and shipping notes.
+- Record whether a product was shipped, dropped off, installed, or exchanged at a meetup using fields tailored to that method.
+- Capture shipping carriers, tracking numbers, direct official tracking links, and an editable delivery status.
+- Configure warranty periods in Admin and see live green in-warranty countdowns or red expired indicators throughout sale history.
+- Keep shipped-to and installed-at addresses while allowing venue or notes-based details for drop-offs and meetups.
 - Record Cash, Venmo, or PayPal payments with an optional reference.
 - Attach transaction notes to a sale and time-stamped support notes to a customer.
 - Browse inventory, sales, and customers in searchable 10-record pages.
@@ -46,6 +49,14 @@ General inventory tools can be larger and more complicated than a small reseller
 ### Product model administration
 
 ![vBoxStock product model administration](docs/screenshots/admin.jpg)
+
+### Fulfillment and warranty tracking
+
+![vBoxStock sale fulfillment and warranty details](docs/screenshots/sale-fulfillment-warranty.png)
+
+### Warranty administration
+
+![vBoxStock warranty period administration](docs/screenshots/admin-warranties.png)
 
 ### User administration and database backups
 
@@ -68,6 +79,7 @@ vBoxStock immediately requires a new password and blocks access to application d
 | --- | :---: | :---: |
 | View and search inventory, sales, customers, and notes | Yes | Yes |
 | Receive inventory and record sales | Yes | No |
+| Edit fulfillment, tracking, warranty, and transaction details | Yes | No |
 | Edit notes, void sales, or delete records | Yes | No |
 | Manage product models, users, and view the audit log | Yes | No |
 | Create, download, delete, or restore backups | Yes | No |
@@ -202,6 +214,14 @@ The Admin page can create a transactionally consistent snapshot, download it to 
 Administrators manage product models from **Admin → Product models**. Active models appear alphabetically in the Receive Product dropdown. Archiving a model removes it from that dropdown but does not change existing inventory, sales, customer history, or reports. Available units that use an archived model can still be sold, and an archived model can be reactivated at any time.
 
 Model names are unique regardless of capitalization and may contain up to 60 characters. An unused model can be renamed or permanently deleted. Once a model has been used by an inventory or sales record, its name is preserved for historical accuracy; archive it and create a new model instead of renaming or deleting it. The Admin page displays separate available and sold usage counts before an archive is confirmed.
+
+### Fulfillment and warranty records
+
+Every new sale records a delivery method: **Shipped**, **Dropped Off**, **Installed At**, or **Meet**. Shipping and installation require an address. Drop-off and meetup records accept a venue, an optional address, or a descriptive fulfillment note, so locations such as a store or gas station do not become the customer's permanent address. Only Shipped and Installed At sales update the address shown on the customer record.
+
+Shipped sales support UPS, FedEx, USPS, or Other, an optional tracking number, and a manually maintained delivery status. Recognized carriers receive a direct link to their official tracking page. Carrier websites are not scraped and delivery statuses are not fetched automatically.
+
+Administrators manage reusable warranty periods under **Admin → Warranty periods**. The initial choices are No Warranty, 30 Days, 60 Days, 90 Days, and 1 Year. Custom durations can use days, months, or years, and one active period is the default for new sales. Once used, a period is preserved for historical accuracy and can be archived but not edited or deleted. Each sale stores the selected warranty and calculated end date as a snapshot; changing the default does not rewrite previous sales.
 
 The model catalog is stored in `vboxstock.db`, so it is included automatically in every backup and restore. Upgrading from a release with the original fixed model list migrates the existing database in place and first creates a `pre-model-catalog-*.db` safety backup in `/data/backups`.
 
