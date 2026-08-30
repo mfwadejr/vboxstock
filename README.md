@@ -221,9 +221,9 @@ A fresh installation creates an empty inventory, sales history, and customer lis
 
 The Admin page can create a transactionally consistent snapshot, download it to another device, restore a local snapshot, or upload and restore a downloaded copy. A pre-restore snapshot is created automatically before the active database is replaced.
 
-Daily automatic backups can be enabled under **Admin → System and data tools**. Choose a local-time hour from `0` through `23` and retain between 1 and 365 scheduled snapshots. Retention applies only to files named `scheduled-*.db`; manual, pre-upgrade, and pre-restore backups are never removed automatically. The application checks the schedule every 15 minutes and creates at most one scheduled backup per calendar day.
+Automatic backups can be enabled under **Admin → Database backups**. Choose **Every day** or **Weekly**; weekly schedules also provide a weekday selection. Select the local backup time and retain between 1 and 365 automatic snapshots. Retention applies only to `automatic-*.db` files and legacy `scheduled-*.db` files; manual, pre-upgrade, and pre-restore backups are never removed automatically. The application checks the schedule every 15 minutes and shows the last and next automatic-backup times.
 
-The same section reports application and database-schema versions, Node.js version, database size, `/data` writability, free disk space, configured time zone, and the latest backup. These checks are local to the container and do not transmit system information anywhere.
+The separate **System diagnostics** section reports application and database-schema versions, Node.js version, database size, `/data` writability, free disk space, configured time zone, and the latest backup. These checks are local to the container and do not transmit system information anywhere.
 
 ## Product model catalog
 
