@@ -76,13 +76,15 @@ docker run -d \
   --restart unless-stopped \
   -p 3000:3000 \
   -e TZ=America/New_York \
+  -e PUID=99 \
+  -e PGID=100 \
   -v /your/persistent/path:/data \
   ghcr.io/mfwadejr/vboxstock:latest
 ```
 
 Open `http://YOUR-SERVER-IP:3000`, sign in with the initial credentials above, and change the password when prompted.
 
-The host path mounted at `/data` is essential. Removing the container is safe when this mount remains intact; running without a persistent mount means the database can be lost when the container is replaced.
+The host path mounted at `/data` is essential. Removing the container is safe when this mount remains intact; running without a persistent mount means the database can be lost when the container is replaced. `PUID` and `PGID` determine which host user and group own the mounted data. The defaults are Unraid's `nobody:users` IDs, `99:100`.
 
 ## Docker Compose
 
@@ -110,8 +112,10 @@ Use the included `vboxstock-unraid.xml` template or create a container with thes
 | Container data path | `/data` |
 | Suggested Unraid host path | `/mnt/user/appdata/vboxstock` |
 | Network mode | `bridge` |
+| PUID | `99` |
+| PGID | `100` |
 
-Open the container's WebUI after installation. Updates can be applied with **Force Update** or through the CA Auto Update Applications plugin.
+Open the container's WebUI after installation. Updates can be applied with **Force Update** or through the CA Auto Update Applications plugin. At startup, the container creates `/data/backups`, applies the configured `PUID` and `PGID` ownership to `/data`, and then runs the application with those IDs.
 
 ## Data and backups
 
@@ -119,6 +123,8 @@ vBoxStock uses SQLite and does not require MySQL, PostgreSQL, Redis, or another 
 
 - `/data/vboxstock.db` — active application database
 - `/data/backups/` — locally retained database snapshots
+
+`/data` is the path inside the container. When `/mnt/user/appdata/vboxstock` is mapped directly to `/data`, the Unraid host folder contains `vboxstock.db` and `backups/`; it does not contain another nested folder named `data`.
 
 The Admin page can create a transactionally consistent snapshot, download it to another device, restore a local snapshot, or upload and restore a downloaded copy. A pre-restore snapshot is created automatically before the active database is replaced.
 
@@ -143,6 +149,7 @@ docker exec -e RESET_ADMIN_PASSWORD=NewPassword123 -it vboxstock node server.mjs
 - Image: `ghcr.io/mfwadejr/vboxstock:latest`
 - Application port: `3000/tcp`
 - Persistent volume: `/data`
+- Runtime ownership: configurable with `PUID` and `PGID` (`99:100` by default)
 - Health check: `GET /api/health`
 - Runtime: Node.js 22
 - Database: SQLite

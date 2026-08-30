@@ -9,3 +9,5 @@ services:
       - ./data:/data
     environment:
       - TZ=America/New_York
+      - PUID=99
+      - PGID=100
