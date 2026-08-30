@@ -8,7 +8,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: mfwadejr/vseebox-stockroom
+  IMAGE_NAME: mfwadejr/vboxstock
 
 jobs:
   publish:
