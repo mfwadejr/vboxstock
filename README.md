@@ -135,6 +135,8 @@ vBoxStock uses SQLite and does not require MySQL, PostgreSQL, Redis, or another 
 
 `/data` is the path inside the container. When `/mnt/user/appdata/vboxstock` is mapped directly to `/data`, the Unraid host folder contains `vboxstock.db` and `backups/`; it does not contain another nested folder named `data`.
 
+A fresh installation creates an empty inventory, sales history, and customer list. Only the initial `admin` account is created. Replacing or upgrading the container preserves existing records because `vboxstock.db` remains in the mounted host folder. Removing or changing the `/data` mapping starts a separate empty database, so keep that mapping consistent across upgrades.
+
 The Admin page can create a transactionally consistent snapshot, download it to another device, restore a local snapshot, or upload and restore a downloaded copy. A pre-restore snapshot is created automatically before the active database is replaced.
 
 Backups contain customer information and password hashes. Store downloaded copies securely. Restoring a database also restores the user accounts contained in that backup and signs out every active session. An older backup without user accounts starts the first-login `admin` / `admin` setup flow.
