@@ -23,7 +23,7 @@ test("authentication, roles, inventory, sale, and restock", async t => {
   response=await request("/api/auth/change-password",{method:"POST",headers:jsonHeaders(bootstrap.cookie),body:JSON.stringify({currentPassword:"admin",newPassword:"password8",confirmPassword:"password8"})});assert.equal(response.status,200);
   const adminCookie=response.headers.get("set-cookie").split(";")[0];
 
-  response=await request("/api/products",{headers:{cookie:adminCookie}});let items=await response.json();assert.equal(items.length,10);
+  response=await request("/api/products",{headers:{cookie:adminCookie}});let items=await response.json();assert.equal(items.length,0,"a fresh database must contain no inventory or sales");
   response=await request("/api/admin/users",{method:"POST",headers:jsonHeaders(adminCookie),body:JSON.stringify({username:"viewer",password:"viewer123",role:"readonly"})});assert.equal(response.status,201);
   const viewerLogin=await login("viewer","viewer123");
   response=await request("/api/auth/change-password",{method:"POST",headers:jsonHeaders(viewerLogin.cookie),body:JSON.stringify({currentPassword:"viewer123",newPassword:"viewer456",confirmPassword:"viewer456"})});
