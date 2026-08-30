@@ -54,21 +54,9 @@ General inventory tools can be larger and more complicated than a small reseller
 
 ![vBoxStock product model administration](docs/screenshots/admin.jpg)
 
-### Fulfillment and warranty tracking
-
-![vBoxStock sale fulfillment and warranty details](docs/screenshots/sale-fulfillment-warranty.png)
-
-### Warranty administration
-
-![vBoxStock warranty period administration](docs/screenshots/admin-warranties.png)
-
 ### Sales filters and CSV export
 
 ![vBoxStock sales filters and export controls](docs/screenshots/sales-filters.png)
-
-### System diagnostics and scheduled backups
-
-![vBoxStock system diagnostics and scheduled backup settings](docs/screenshots/admin-system-backups.png)
 
 ### User administration and database backups
 
