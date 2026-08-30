@@ -112,8 +112,17 @@ Use the included `vboxstock-unraid.xml` template or create a container with thes
 | Container data path | `/data` |
 | Suggested Unraid host path | `/mnt/user/appdata/vboxstock` |
 | Network mode | `bridge` |
+| Timezone (`TZ`) | `America/New_York` |
 | PUID | `99` |
 | PGID | `100` |
+
+Add `TZ`, `PUID`, and `PGID` as Unraid container variables:
+
+| Name | Key | Value |
+| --- | --- | --- |
+| Timezone | `TZ` | `America/New_York` |
+| User ID | `PUID` | `99` |
+| Group ID | `PGID` | `100` |
 
 Open the container's WebUI after installation. Updates can be applied with **Force Update** or through the CA Auto Update Applications plugin. At startup, the container creates `/data/backups`, applies the configured `PUID` and `PGID` ownership to `/data`, and then runs the application with those IDs.
 
