@@ -23,6 +23,7 @@ General inventory tools can be larger and more complicated than a small reseller
 ## Highlights
 
 - Track available and sold devices by UID, serial number, or MAC address.
+- Receive one device or a batch of devices from a mobile phone, with shared batch details, camera barcode scanning, review before saving, and duplicate-identifier protection.
 - Start with vSeeBox V3 Plus, V5 Pro, V6 Plus, and V6 Pro, then add any additional model you carry.
 - Manage the model catalog from the Admin page: rename unused models, archive end-of-life models, reactivate them later, or delete models that have never been used.
 - Record New, Used, or Refurbished condition and purchase cost.

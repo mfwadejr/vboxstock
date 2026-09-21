@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.5.0
+
+- Added batch inventory receiving with quantity, model, condition, received date, cost, and notes shared across the batch.
+- Added mobile camera barcode scanning for the three-code UID, serial number, and MAC labels used by vSeeBox devices.
+- Added manual-entry fallback, per-device review/removal, progress feedback, and duplicate checks against the batch and existing inventory.
+- Made batch receiving transactional so a duplicate or invalid device leaves the entire batch unsaved.
+- Added mobile-friendly scanner and batch-list styling.
+
 ## 3.4.0
 
 - Added multi-item sales so one customer transaction can include multiple available inventory devices.
