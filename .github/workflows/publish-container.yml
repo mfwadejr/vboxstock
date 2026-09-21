@@ -34,7 +34,7 @@ jobs:
         with:
           registry: ${{ steps.registry.outputs.registry }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ github.server_url == 'https://github.com' && secrets.GITHUB_TOKEN || secrets.REGISTRY_TOKEN }}
 
       - name: Generate image tags
         id: meta
