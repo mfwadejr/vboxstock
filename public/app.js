@@ -94,6 +94,8 @@ function sellForm(id="") {
   bindCustomer(form);form.onsubmit=async e=>{e.preventDefault();const button=e.submitter,selected=checks.filter(x=>x.checked);if(!selected.length){toast("Select at least one product.");return;}button.disabled=true;const data=Object.fromEntries(new FormData(form));delete data.productIds;data.items=selected.map(check=>({productId:check.value,salePrice:Number(form.querySelector(`[data-price="${check.value}"]`).value)||0}));try{await change("/api/sales","POST",data,`${selected.length} ${selected.length===1?"item":"items"} sold.`);}finally{button.disabled=false}};$("[data-cancel]").onclick=closeModal;
 }
 async function submitForm(e,path,message,method="POST"){ e.preventDefault(); await change(path,method,Object.fromEntries(new FormData(e.currentTarget)),message); }
+// Re-declared here to keep camera access available on Safari, where BarcodeDetector may be absent.
+async function scanLabelCompat(form,help){if(!navigator.mediaDevices?.getUserMedia){help.textContent="Camera access is unavailable. Use manual entry or enable camera access for this site.";return}let stream,overlay;try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});const video=document.createElement("video");video.autoplay=true;video.playsInline=true;video.srcObject=stream;overlay=document.createElement("div");overlay.className="scanner-overlay";overlay.innerHTML='<div><strong>Point at the full label</strong><small>This browser can show the camera but cannot decode barcodes automatically. Enter the three values below, then close this view.</small><button type="button">Close camera</button></div>';overlay.prepend(video);document.body.append(overlay);const finish=()=>{stream.getTracks().forEach(track=>track.stop());overlay.remove()};overlay.querySelector("button").onclick=finish;await video.play();help.textContent="Camera is open. Enter the identifiers below, then close this view."}catch(error){if(stream)stream.getTracks().forEach(track=>track.stop());if(overlay)overlay.remove();help.textContent="Unable to open the camera. Check browser permissions or enter the identifiers manually."}}
 async function change(path,method,body,message){ try{ await api(path,{method,body:body?JSON.stringify(body):undefined}); closeModal(); await load(); toast(message); }catch(e){ toast(e.message); } }
 
 function viewSale(p) {
@@ -166,5 +168,6 @@ $("#logout").onclick=logout;
 $("#themeSelect").onchange=e=>{try{localStorage.setItem("vboxstock-theme",e.target.value)}catch{}applyTheme(e.target.value);};
 systemTheme.addEventListener?.("change",()=>{if(savedTheme()==="system")applyTheme("system")});
 $("#date").textContent=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+if(!("BarcodeDetector" in window))document.addEventListener("click",e=>{const button=e.target.closest(".scan-camera");if(button){e.stopPropagation();scanLabelCompat(button.closest("form"),button.closest("form").querySelector(".scan-help"))}},true);
 applyTheme();
 initialize();
