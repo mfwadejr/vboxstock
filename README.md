@@ -16,7 +16,7 @@ General inventory tools can be larger and more complicated than a small reseller
 
 1. Receive an individually identifiable device into inventory.
 2. Record its cost, model, condition, and notes.
-3. Complete a sale with customer, payment, fulfillment, warranty, and transaction details.
+3. Complete a sale for one or more devices with customer, payment, fulfillment, warranty, and transaction details.
 4. Revisit the customer or sale later for support and follow-up.
 5. Back up the complete business record without managing a separate database server.
 
@@ -31,6 +31,7 @@ General inventory tools can be larger and more complicated than a small reseller
 - Configure warranty periods in Admin and see live green in-warranty countdowns or red expired indicators throughout sale history.
 - Keep shipped-to and installed-at addresses while allowing venue or notes-based details for drop-offs and meetups.
 - Record Cash, Venmo, or PayPal payments with an optional reference.
+- Sell multiple inventory items in one checkout, assign an individual price to each device, and review the calculated transaction total.
 - Attach transaction notes to a sale and time-stamped support notes to a customer.
 - Browse inventory, sales, and customers in searchable 10-record pages.
 - Filter records by model and date, with additional payment, fulfillment, and warranty filters for sales.

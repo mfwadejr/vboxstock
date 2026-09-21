@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.4.0
+
+- Added multi-item sales so one customer transaction can include multiple available inventory devices.
+- Added an individual sale-price field for every selected device and a live transaction total.
+- Applied shared customer, payment, fulfillment, warranty, date, and notes to every item in the transaction.
+- Made multi-item sales atomic so validation or inventory conflicts leave every selected device unchanged.
+- Retained the single-device sale API for backward compatibility.
+- Added API coverage for successful multi-item sales and failed-transaction rollback behavior.
+
 ## 3.3.1
 
 - Moved automatic-backup scheduling into the Database backups section.
