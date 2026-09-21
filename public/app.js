@@ -188,4 +188,6 @@ const targetedOcrObserver=new MutationObserver(()=>{const input=$("#receiveForm 
 const autoAddScanObserver=new MutationObserver(()=>{const form=$("#receiveForm"),help=form?.querySelector(".scan-help"),marker=form?.querySelector("[data-scan-added]");if(form&&marker&&!form.elements.uid.value&&!form.elements.sn.value&&!form.elements.mac.value)marker.remove();if(form&&help?.textContent.includes("read")&&form.elements.uid.value&&form.elements.sn.value&&form.elements.mac.value&&!marker){const added=document.createElement("i");added.dataset.scanAdded="true";added.hidden=true;form.append(added);form.querySelector(".add-device").click()}});autoAddScanObserver.observe($("#modalBody"),{childList:true,subtree:true,characterData:true});
 if(!("BarcodeDetector" in window))document.addEventListener("click",e=>{const button=e.target.closest(".scan-camera");if(button){e.stopPropagation();scanLabelWithLibrary(button.closest("form"),button.closest("form").querySelector(".scan-help"))}},true);
 applyTheme();
+async function loadBuildInfo(){try{const response=await fetch("/api/health"),data=await response.json(),label=`v${data.appVersion}${data.buildSha&&data.buildSha!=="dev"?" · "+data.buildSha:""}`;document.querySelectorAll(".build-tag").forEach(el=>el.textContent=label)}catch{}}
+loadBuildInfo();
 initialize();

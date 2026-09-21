@@ -1,5 +1,8 @@
 FROM node:22-alpine
+ARG GIT_SHA=dev
+ARG BUILD_DATE
 LABEL org.opencontainers.image.source="https://git.us2plus2.com/marvin/vboxstock"
+LABEL org.opencontainers.image.revision="$GIT_SHA"
 LABEL org.opencontainers.image.description="Self-contained vSeeBox inventory and sales tracker"
 WORKDIR /app
 COPY package.json server.mjs ./
@@ -9,6 +12,8 @@ RUN apk add --no-cache su-exec \
     && chmod +x /usr/local/bin/vboxstock-entrypoint \
     && mkdir -p /data
 ENV PORT=3000 DATA_DIR=/data NODE_ENV=production PUID=99 PGID=100
+ENV GIT_SHA=$GIT_SHA
+ENV BUILD_DATE=$BUILD_DATE
 EXPOSE 3000
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1
