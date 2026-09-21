@@ -2,7 +2,7 @@ name: vboxstock
 
 services:
   vboxstock:
-    image: ghcr.io/mfwadejr/vboxstock:latest
+    image: git.us2plus2.com/marvin/vboxstock:latest
     container_name: vboxstock
     restart: unless-stopped
     ports:
