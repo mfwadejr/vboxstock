@@ -8,6 +8,10 @@ on:
 
 jobs:
   publish:
+    # Only GitHub's runner is reliably amd64 and fast; the self-hosted
+    # Gitea runner is a different (slower, non-amd64) machine, so it
+    # builds here once and pushes to both registries instead.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -17,33 +21,30 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v6
 
-      - name: Determine target registry
-        id: registry
-        run: |
-          if [ "${{ github.server_url }}" = "https://github.com" ]; then
-            echo "registry=ghcr.io" >> "$GITHUB_OUTPUT"
-            echo "image=ghcr.io/mfwadejr/vboxstock" >> "$GITHUB_OUTPUT"
-          else
-            host="$(printf '%s' '${{ github.server_url }}' | sed -E 's#^https?://##')"
-            echo "registry=$host" >> "$GITHUB_OUTPUT"
-            echo "image=$host/marvin/vboxstock" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Sign in to container registry
+      - name: Sign in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ steps.registry.outputs.registry }}
+          registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ github.server_url == 'https://github.com' && secrets.GITHUB_TOKEN || secrets.REGISTRY_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sign in to Gitea container registry
+        uses: docker/login-action@v3
+        with:
+          registry: git.us2plus2.com
+          username: marvin
+          password: ${{ secrets.REGISTRY_TOKEN }}
 
       - name: Generate image tags
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.registry.outputs.image }}
+          images: |
+            ghcr.io/mfwadejr/vboxstock
+            git.us2plus2.com/marvin/vboxstock
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag
