@@ -17,6 +17,10 @@
 .side-nav button.tab.active .badge{background:#dbe4ff;color:#2563eb}
 .sidebar-spacer{flex:1}
 .sidebar-foot{border-top:1px solid #eef0f6;padding-top:14px;display:flex;flex-direction:column;gap:10px}
+.sidebar-foot .user-menu{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+.sidebar-foot .user-menu #currentUser{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-foot .theme-control{flex-shrink:0}
+.sidebar-foot .theme-control select{width:76px;min-width:0;padding:0 22px 0 8px;font-size:12px}
 .sidebar .storage-status{margin:0 0 6px 4px!important}
 .main-col{flex:1;min-width:0;display:flex;flex-direction:column}
 header{height:72px;flex-shrink:0;background:white;border-bottom:1px solid #e3e7ef;position:sticky;top:0;z-index:2}
