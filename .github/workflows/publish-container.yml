@@ -6,12 +6,12 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+env:
+  REGISTRY: git.us2plus2.com
+  IMAGE_NAME: marvin/vboxstock
+
 jobs:
   publish:
-    # Only GitHub's runner is reliably amd64 and fast; the self-hosted
-    # Gitea runner is a different (slower, non-amd64) machine, so it
-    # builds here once and pushes to both registries instead.
-    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -24,17 +24,10 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Sign in to GitHub Container Registry
+      - name: Sign in to container registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Sign in to Gitea container registry
-        uses: docker/login-action@v3
-        with:
-          registry: git.us2plus2.com
+          registry: ${{ env.REGISTRY }}
           username: marvin
           password: ${{ secrets.REGISTRY_TOKEN }}
 
@@ -42,9 +35,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/mfwadejr/vboxstock
-            git.us2plus2.com/marvin/vboxstock
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag
@@ -55,6 +46,7 @@ jobs:
         with:
           context: .
           push: true
+          platforms: linux/amd64
           provenance: false
           sbom: false
           tags: ${{ steps.meta.outputs.tags }}
