@@ -83,12 +83,14 @@ label textarea{height:auto;min-height:var(--control-h);padding:11px var(--contro
   .sidebar-foot{order:4;flex-direction:row;align-items:center;width:100%;border-top:1px solid #eef0f6;margin-top:10px;padding-top:10px}
   .sidebar-foot #logout{margin-left:auto}
   .build-tag{display:none}
-  .header-inner{padding:0 16px;gap:10px}
-  #search{max-width:none}
-  .actions button{font-size:0;padding:0 12px}
-  .actions button::first-letter{font-size:16px}
+  header{height:auto;padding:10px 0}
+  .header-inner{flex-wrap:wrap;padding:0 16px;gap:10px}
+  #search{max-width:none;flex:1 1 100%;order:1}
+  .actions{order:2;width:100%;margin-left:0;gap:8px}
+  .actions button{flex:1;font-size:13px;padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stats{grid-template-columns:1fr}
   .scan,.form-row{grid-template-columns:1fr}
   main{margin-top:18px}
 }
 @media(max-width:600px){.side-nav button span{display:none}.side-nav button.tab{min-width:0}}
+@media(max-width:420px){.actions{flex-direction:column}.actions button{width:100%;white-space:normal}}
