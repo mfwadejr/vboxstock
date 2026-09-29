@@ -84,7 +84,32 @@ function receiveForm() {
   form.elements.quantity.oninput=()=>{if(Number(quantity.value)>100)quantity.value=100;renderBatch()};form.querySelector(".add-device").onclick=()=>{const row={uid:form.elements.uid.value.trim(),sn:form.elements.sn.value.trim(),mac:form.elements.mac.value.trim()};if(!row.uid&&!row.sn&&!row.mac){help.textContent="Enter or scan at least one identifier.";return}if(duplicate(row)){help.textContent="Duplicate identifier detected. Scan a different device.";return}if(batch.length>=Number(quantity.value)){help.textContent="The requested quantity is already filled.";return}batch.push(row);form.elements.uid.value=form.elements.sn.value=form.elements.mac.value="";help.textContent="Device added. Scan the next label.";renderBatch();form.elements.uid.focus()};list.onclick=e=>{const button=e.target.closest("[data-remove-batch]");if(button){batch.splice(Number(button.dataset.removeBatch),1);renderBatch()}};
   form.querySelector(".scan-camera").onclick=()=>scanLabelLive(form,help);const photoInput=form.querySelector(".photo-input");form.querySelector(".photo-scan").onclick=()=>photoInput.click();photoInput.onchange=()=>{if(photoInput.files?.[0])scanLabelPhoto(form,help,photoInput.files[0]);photoInput.value=""};renderBatch();form.onsubmit=async e=>{e.preventDefault();if(batch.length!==Number(quantity.value)){help.textContent=`Add all ${quantity.value} devices before saving.`;return}const data=Object.fromEntries(new FormData(form));delete data.quantity;delete data.uid;delete data.sn;delete data.mac;data.items=batch;await change("/api/products/batch","POST",data,`${batch.length} ${batch.length===1?"product":"products"} received.`)};$("[data-cancel]").onclick=closeModal;
 }
-async function extractIdsFromImageUrl(url){let worker;try{const Tesseract=await import("https://cdn.jsdelivr.net/npm/tesseract.js@5/+esm");worker=await Tesseract.createWorker("eng");const result=await worker.recognize(url),text=String(result.data.text||"").replace(/\r/g," ");const uid=text.match(/UID\s*[:#]?\s*([A-Z0-9]+)/i)?.[1],sn=text.match(/SN\s*[:#]?\s*([A-Z0-9]+)/i)?.[1],rawMac=text.match(/MAC\s*[:#]?\s*([A-F0-9: -]{12,})/i)?.[1];return{uid,sn,mac:rawMac?normalizeMacValue(rawMac):undefined}}finally{await worker?.terminate().catch(()=>{})}}
+function preprocessForOcr(bitmap,thresholdBias){
+  const srcW=bitmap.width||bitmap.naturalWidth,srcH=bitmap.height||bitmap.naturalHeight,scale=Math.min(3,Math.max(1,1600/srcW)),w=Math.round(srcW*scale),h=Math.round(srcH*scale);
+  const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext("2d");ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(bitmap,0,0,w,h);
+  const imageData=ctx.getImageData(0,0,w,h),data=imageData.data,pixels=w*h,gray=new Float32Array(pixels);
+  let min=255,max=0;
+  for(let i=0,p=0;p<pixels;i+=4,p++){const g=.299*data[i]+.587*data[i+1]+.114*data[i+2];gray[p]=g;if(g<min)min=g;if(g>max)max=g}
+  const range=Math.max(1,max-min);
+  for(let i=0,p=0;p<pixels;i+=4,p++){const stretched=(gray[p]-min)/range*255,v=stretched<128*thresholdBias?0:255;data[i]=data[i+1]=data[i+2]=v}
+  ctx.putImageData(imageData,0,0);
+  return canvas;
+}
+async function extractIdsFromImage(source){let worker;try{
+  const bitmap=typeof source==="string"?await(async()=>{const img=new Image();img.src=source;await img.decode();return img})():await createImageBitmap(source);
+  const Tesseract=await import("https://cdn.jsdelivr.net/npm/tesseract.js@5/+esm");
+  worker=await Tesseract.createWorker("eng");
+  await worker.setParameters({tessedit_pageseg_mode:"6",preserve_interword_spaces:"1",tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:#- "});
+  const found={uid:undefined,sn:undefined,mac:undefined};
+  for(const bias of [1,1.2,.8]){
+    const canvas=preprocessForOcr(bitmap,bias),result=await worker.recognize(canvas),text=String(result.data.text||"").replace(/\r/g," ");
+    const uid=text.match(/UID\s*[:#]?\s*([A-Z0-9]{4,})/i)?.[1],sn=text.match(/SN\s*[:#]?\s*([A-Z0-9]{4,})/i)?.[1],rawMac=text.match(/MAC\s*[:#]?\s*([A-F0-9: -]{12,})/i)?.[1];
+    if(!found.uid&&uid)found.uid=uid;if(!found.sn&&sn)found.sn=sn;if(!found.mac&&rawMac)found.mac=normalizeMacValue(rawMac);
+    if(found.uid&&found.sn&&found.mac)break;
+  }
+  return found;
+}finally{await worker?.terminate().catch(()=>{})}}
 function sellForm(id="") {
   const available=state.products.filter(p=>p.status==="available");
   if(!available.length){openModal('<h2>No available inventory</h2><p>Receive a product before recording a sale.</p><div class="form-actions"><button class="primary" data-cancel>Close</button></div>');$("[data-cancel]").onclick=closeModal;return;}
@@ -167,16 +192,14 @@ $("#logout").onclick=logout;
 $("#themeSelect").onchange=e=>{try{localStorage.setItem("vboxstock-theme",e.target.value)}catch{}applyTheme(e.target.value);};
 systemTheme.addEventListener?.("change",()=>{if(savedTheme()==="system")applyTheme("system")});
 $("#date").textContent=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-async function scanLabelPhoto(form,help,file){let url;try{url=URL.createObjectURL(file);const {uid,sn,mac}=await extractIdsFromImageUrl(url);if(!form.elements.uid.value&&uid)form.elements.uid.value=uid;if(!form.elements.sn.value&&sn)form.elements.sn.value=sn;if(!form.elements.mac.value&&mac)form.elements.mac.value=mac;const count=[form.elements.uid.value,form.elements.sn.value,form.elements.mac.value].filter(Boolean).length;help.textContent=count?count+" of 3 identifiers read from the photo. Review the fields before adding the device.":"No identifiers were detected. Retake the photo with the full label in focus and good lighting."}catch(error){help.textContent="The photo could not be processed. Retake it in brighter light or enter the values manually."}finally{if(url)URL.revokeObjectURL(url)}}
-async function scanLabelLive(form,help){if(!navigator.mediaDevices?.getUserMedia){help.textContent="Camera access is unavailable. Use manual entry or enable camera access for this site.";return}let stream;try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});const video=document.createElement("video");video.autoplay=true;video.playsInline=true;video.srcObject=stream;const overlay=document.createElement("div");overlay.className="scanner-overlay";overlay.innerHTML='<div><strong>Frame the full label</strong><small class="scan-status">Hold steady, then capture a photo to read the identifiers.</small><div class="scan-live-actions"><button type="button" class="capture">Capture</button><button type="button" class="next" hidden>Confirm and scan next</button><button type="button" class="cancel">Done</button></div></div>';overlay.prepend(video);$("#modal").append(overlay);const statusEl=overlay.querySelector(".scan-status"),captureBtn=overlay.querySelector(".capture"),nextBtn=overlay.querySelector(".next"),doneBtn=overlay.querySelector(".cancel");const finish=()=>{stream.getTracks().forEach(track=>track.stop());overlay.remove()};doneBtn.onclick=finish;await video.play();
+async function scanLabelPhoto(form,help,source){try{const {uid,sn,mac}=await extractIdsFromImage(source);if(!form.elements.uid.value&&uid)form.elements.uid.value=uid;if(!form.elements.sn.value&&sn)form.elements.sn.value=sn;if(!form.elements.mac.value&&mac)form.elements.mac.value=mac;const count=[form.elements.uid.value,form.elements.sn.value,form.elements.mac.value].filter(Boolean).length;help.textContent=count?count+" of 3 identifiers read from the photo. Review the fields before adding the device.":"No identifiers were detected. Retake the photo with the full label in focus and good lighting."}catch(error){help.textContent="The photo could not be processed. Retake it in brighter light or enter the values manually."}}
+async function scanLabelLive(form,help){if(!navigator.mediaDevices?.getUserMedia){help.textContent="Camera access is unavailable. Use manual entry or enable camera access for this site.";return}let stream;try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}}});const video=document.createElement("video");video.autoplay=true;video.playsInline=true;video.srcObject=stream;const overlay=document.createElement("div");overlay.className="scanner-overlay";overlay.innerHTML='<div><strong>Frame the full label</strong><small class="scan-status">Hold steady, then capture a photo to read the identifiers.</small><div class="scan-live-actions"><button type="button" class="capture">Capture</button><button type="button" class="next" hidden>Confirm and scan next</button><button type="button" class="cancel">Done</button></div></div>';overlay.prepend(video);$("#modal").append(overlay);const statusEl=overlay.querySelector(".scan-status"),captureBtn=overlay.querySelector(".capture"),nextBtn=overlay.querySelector(".next"),doneBtn=overlay.querySelector(".cancel");const finish=()=>{stream.getTracks().forEach(track=>track.stop());overlay.remove()};doneBtn.onclick=finish;await video.play();
     captureBtn.onclick=async()=>{
       captureBtn.disabled=true;captureBtn.textContent="Reading…";statusEl.textContent="Reading the label…";nextBtn.hidden=true;
       const canvas=document.createElement("canvas");canvas.width=video.videoWidth;canvas.height=video.videoHeight;canvas.getContext("2d").drawImage(video,0,0);
-      const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",.92));
-      if(!blob){statusEl.textContent="Could not capture the frame. Try again.";captureBtn.disabled=false;captureBtn.textContent="Capture";return}
-      let ids={};const url=URL.createObjectURL(blob);
-      try{ids=await extractIdsFromImageUrl(url)}catch{}
-      URL.revokeObjectURL(url);
+      if(!canvas.width||!canvas.height){statusEl.textContent="Could not capture the frame. Try again.";captureBtn.disabled=false;captureBtn.textContent="Capture";return}
+      let ids={};
+      try{ids=await extractIdsFromImage(canvas)}catch{}
       const before={uid:form.elements.uid.value,sn:form.elements.sn.value,mac:form.elements.mac.value};
       if(!form.elements.uid.value&&ids.uid)form.elements.uid.value=ids.uid;
       if(!form.elements.sn.value&&ids.sn)form.elements.sn.value=ids.sn;
