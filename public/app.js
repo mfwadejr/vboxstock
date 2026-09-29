@@ -242,10 +242,12 @@ $("#modal .close").onclick=closeModal; $("#modal").onclick=e=>{if(e.target===$("
 $("#logout").onclick=logout;
 $("#date").textContent=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
 async function scanLabelPhoto(form,help,source){try{const {uid,sn,mac}=await extractIdsFromImage(source);if(!form.elements.uid.value&&uid)form.elements.uid.value=uid;if(!form.elements.sn.value&&sn)form.elements.sn.value=sn;if(!form.elements.mac.value&&mac)form.elements.mac.value=mac;const count=[form.elements.uid.value,form.elements.sn.value,form.elements.mac.value].filter(Boolean).length;help.textContent=count?count+" of 3 identifiers read from the photo. Review the fields before adding the device.":"No identifiers were detected. Retake the photo with the full label in focus and good lighting."}catch(error){help.textContent="The photo could not be processed. Retake it in brighter light or enter the values manually."}}
-async function scanLabelLive(form,help){if(!navigator.mediaDevices?.getUserMedia){help.textContent="Camera access is unavailable. Use manual entry or enable camera access for this site.";return}let stream;try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}}});const video=document.createElement("video");video.autoplay=true;video.playsInline=true;video.srcObject=stream;const overlay=document.createElement("div");overlay.className="scanner-overlay";overlay.innerHTML='<div><strong>Frame the full label</strong><small class="scan-status">Hold steady, then capture a photo to read the identifiers.</small><div class="scan-live-actions"><button type="button" class="capture">Capture</button><button type="button" class="next" hidden>Confirm and scan next</button><button type="button" class="cancel">Done</button></div></div>';overlay.prepend(video);$("#modal").append(overlay);const statusEl=overlay.querySelector(".scan-status"),captureBtn=overlay.querySelector(".capture"),nextBtn=overlay.querySelector(".next"),doneBtn=overlay.querySelector(".cancel");const finish=()=>{stream.getTracks().forEach(track=>track.stop());overlay.remove()};doneBtn.onclick=finish;await video.play();
+async function scanLabelLive(form,help){if(!navigator.mediaDevices?.getUserMedia){help.textContent="Camera access is unavailable. Use manual entry or enable camera access for this site.";return}let stream;try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}}});const video=document.createElement("video");video.autoplay=true;video.playsInline=true;video.srcObject=stream;const overlay=document.createElement("div");overlay.className="scanner-overlay";overlay.innerHTML='<div class="scan-viewport"><div class="scan-guide"></div></div><div class="scan-controls"><strong>Frame the full label</strong><small class="scan-status">Line up the label inside the box, then capture.</small><div class="scan-live-actions"><button type="button" class="capture">Capture</button><button type="button" class="next" hidden>Confirm and scan next</button><button type="button" class="cancel">Done</button></div></div>';overlay.querySelector(".scan-viewport").prepend(video);$("#modal").append(overlay);const guideEl=overlay.querySelector(".scan-guide"),statusEl=overlay.querySelector(".scan-status"),captureBtn=overlay.querySelector(".capture"),nextBtn=overlay.querySelector(".next"),doneBtn=overlay.querySelector(".cancel");const finish=()=>{stream.getTracks().forEach(track=>track.stop());overlay.remove()};doneBtn.onclick=finish;await video.play();
     captureBtn.onclick=async()=>{
       captureBtn.disabled=true;captureBtn.textContent="Reading…";statusEl.textContent="Reading the label…";nextBtn.hidden=true;
-      const canvas=document.createElement("canvas");canvas.width=video.videoWidth;canvas.height=video.videoHeight;canvas.getContext("2d").drawImage(video,0,0);
+      const crop=guideCropRect(video,guideEl);
+      const canvas=document.createElement("canvas");canvas.width=Math.round(crop.sw);canvas.height=Math.round(crop.sh);
+      canvas.getContext("2d").drawImage(video,crop.sx,crop.sy,crop.sw,crop.sh,0,0,canvas.width,canvas.height);
       if(!canvas.width||!canvas.height){statusEl.textContent="Could not capture the frame. Try again.";captureBtn.disabled=false;captureBtn.textContent="Capture";return}
       let ids={};
       try{ids=await extractIdsFromImage(canvas)}catch{}
@@ -268,6 +270,20 @@ async function scanLabelLive(form,help){if(!navigator.mediaDevices?.getUserMedia
     };
   }catch(error){if(stream)stream.getTracks().forEach(track=>track.stop());help.textContent="Unable to access the camera. Enter the identifiers manually or check camera permissions."}}
 const normalizeMacValue=value=>{const hex=String(value||"").replace(/[^0-9a-f]/gi,"").slice(0,12);return hex.length===12?(hex.match(/.{2}/g)||[]).join(":"):value};
+function guideCropRect(video,guideEl){
+  const videoBox=video.getBoundingClientRect(),videoRatio=video.videoWidth/video.videoHeight,boxRatio=videoBox.width/videoBox.height;
+  let renderedW,renderedH;
+  if(videoRatio>boxRatio){renderedW=videoBox.width;renderedH=videoBox.width/videoRatio}else{renderedH=videoBox.height;renderedW=videoBox.height*videoRatio}
+  const contentX=videoBox.left+(videoBox.width-renderedW)/2,contentY=videoBox.top+(videoBox.height-renderedH)/2;
+  const scaleX=video.videoWidth/renderedW,scaleY=video.videoHeight/renderedH;
+  const guideBox=guideEl.getBoundingClientRect(),pad=.08;
+  const padX=guideBox.width*pad,padY=guideBox.height*pad;
+  let sx=(guideBox.left-padX-contentX)*scaleX,sy=(guideBox.top-padY-contentY)*scaleY;
+  let sw=(guideBox.width+2*padX)*scaleX,sh=(guideBox.height+2*padY)*scaleY;
+  sx=Math.max(0,Math.min(sx,video.videoWidth-1));sy=Math.max(0,Math.min(sy,video.videoHeight-1));
+  sw=Math.max(1,Math.min(sw,video.videoWidth-sx));sh=Math.max(1,Math.min(sh,video.videoHeight-sy));
+  return{sx,sy,sw,sh};
+}
 async function loadBuildInfo(){try{const response=await fetch("/api/health"),data=await response.json(),label=`v${data.appVersion}${data.buildSha&&data.buildSha!=="dev"?" · "+data.buildSha:""}`;document.querySelectorAll(".build-tag").forEach(el=>el.textContent=label)}catch{}}
 loadBuildInfo();
 initialize();
