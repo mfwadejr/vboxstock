@@ -84,6 +84,44 @@ function receiveForm() {
   form.elements.quantity.oninput=()=>{if(Number(quantity.value)>100)quantity.value=100;renderBatch()};form.querySelector(".add-device").onclick=()=>{const row={uid:form.elements.uid.value.trim(),sn:form.elements.sn.value.trim(),mac:form.elements.mac.value.trim()};if(!row.uid&&!row.sn&&!row.mac){help.textContent="Enter or scan at least one identifier.";return}if(duplicate(row)){help.textContent="Duplicate identifier detected. Scan a different device.";return}if(batch.length>=Number(quantity.value)){help.textContent="The requested quantity is already filled.";return}batch.push(row);form.elements.uid.value=form.elements.sn.value=form.elements.mac.value="";help.textContent="Device added. Scan the next label.";renderBatch();form.elements.uid.focus()};list.onclick=e=>{const button=e.target.closest("[data-remove-batch]");if(button){batch.splice(Number(button.dataset.removeBatch),1);renderBatch()}};
   form.querySelector(".scan-camera").onclick=()=>scanLabelLive(form,help);const photoInput=form.querySelector(".photo-input");form.querySelector(".photo-scan").onclick=()=>photoInput.click();photoInput.onchange=()=>{if(photoInput.files?.[0])scanLabelPhoto(form,help,photoInput.files[0]);photoInput.value=""};renderBatch();form.onsubmit=async e=>{e.preventDefault();if(batch.length!==Number(quantity.value)){help.textContent=`Add all ${quantity.value} devices before saving.`;return}const data=Object.fromEntries(new FormData(form));delete data.quantity;delete data.uid;delete data.sn;delete data.mac;data.items=batch;await change("/api/products/batch","POST",data,`${batch.length} ${batch.length===1?"product":"products"} received.`)};$("[data-cancel]").onclick=closeModal;
 }
+function findLabelBoundingBox(bitmap){
+  const srcW=bitmap.width||bitmap.naturalWidth,srcH=bitmap.height||bitmap.naturalHeight,maxDim=420,scale=Math.min(1,maxDim/Math.max(srcW,srcH)),w=Math.max(1,Math.round(srcW*scale)),h=Math.max(1,Math.round(srcH*scale));
+  const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext("2d");ctx.drawImage(bitmap,0,0,w,h);
+  const data=ctx.getImageData(0,0,w,h).data,pixels=w*h,gray=new Float32Array(pixels);
+  let max=0;
+  for(let i=0,p=0;p<pixels;i+=4,p++){const g=.299*data[i]+.587*data[i+1]+.114*data[i+2];gray[p]=g;if(g>max)max=g}
+  const threshold=Math.max(150,max*.72),bright=new Uint8Array(pixels),visited=new Uint8Array(pixels);
+  for(let p=0;p<pixels;p++)bright[p]=gray[p]>=threshold?1:0;
+  let best=null;const stack=[];
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const start=y*w+x;
+    if(!bright[start]||visited[start])continue;
+    let minX=x,maxX=x,minY=y,maxY=y,area=0;
+    stack.length=0;stack.push(start);visited[start]=1;
+    while(stack.length){
+      const cur=stack.pop(),cy=(cur/w)|0,cx=cur-cy*w;area++;
+      if(cx<minX)minX=cx;if(cx>maxX)maxX=cx;if(cy<minY)minY=cy;if(cy>maxY)maxY=cy;
+      if(cx>0&&bright[cur-1]&&!visited[cur-1]){visited[cur-1]=1;stack.push(cur-1)}
+      if(cx<w-1&&bright[cur+1]&&!visited[cur+1]){visited[cur+1]=1;stack.push(cur+1)}
+      if(cy>0&&bright[cur-w]&&!visited[cur-w]){visited[cur-w]=1;stack.push(cur-w)}
+      if(cy<h-1&&bright[cur+w]&&!visited[cur+w]){visited[cur+w]=1;stack.push(cur+w)}
+    }
+    if(area<pixels*.02)continue;
+    if(!best||area>best.area)best={minX,maxX,minY,maxY,area};
+  }
+  if(!best)return null;
+  return{x:best.minX/scale,y:best.minY/scale,w:(best.maxX-best.minX+1)/scale,h:(best.maxY-best.minY+1)/scale};
+}
+function cropToBox(bitmap,box,paddingRatio=.08){
+  const srcW=bitmap.width||bitmap.naturalWidth,srcH=bitmap.height||bitmap.naturalHeight;
+  const padX=box.w*paddingRatio,padY=box.h*paddingRatio;
+  const x=Math.max(0,box.x-padX),y=Math.max(0,box.y-padY);
+  const w=Math.min(srcW-x,box.w+2*padX),h=Math.min(srcH-y,box.h+2*padY);
+  const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(w));canvas.height=Math.max(1,Math.round(h));
+  canvas.getContext("2d").drawImage(bitmap,x,y,w,h,0,0,canvas.width,canvas.height);
+  return canvas;
+}
 function preprocessForOcr(bitmap,thresholdBias){
   const srcW=bitmap.width||bitmap.naturalWidth,srcH=bitmap.height||bitmap.naturalHeight,scale=Math.min(3,Math.max(1,1600/srcW)),w=Math.round(srcW*scale),h=Math.round(srcH*scale);
   const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
@@ -102,12 +140,28 @@ async function extractIdsFromImage(source){let worker;try{
   worker=await Tesseract.createWorker("eng");
   await worker.setParameters({tessedit_pageseg_mode:"6",preserve_interword_spaces:"1",tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:#- "});
   const found={uid:undefined,sn:undefined,mac:undefined};
-  for(const bias of [1,1.2,.8]){
-    const canvas=preprocessForOcr(bitmap,bias),result=await worker.recognize(canvas),text=String(result.data.text||"").replace(/\r/g," ");
-    const uid=text.match(/UID\s*[:#]?\s*([A-Z0-9]{4,})/i)?.[1],sn=text.match(/SN\s*[:#]?\s*([A-Z0-9]{4,})/i)?.[1],rawMac=text.match(/MAC\s*[:#]?\s*([A-F0-9: -]{12,})/i)?.[1];
-    if(!found.uid&&uid)found.uid=uid;if(!found.sn&&sn)found.sn=sn;if(!found.mac&&rawMac)found.mac=normalizeMacValue(rawMac);
-    if(found.uid&&found.sn&&found.mac)break;
-  }
+  const runPasses=async(image,biases)=>{
+    for(const bias of biases){
+      const canvas=preprocessForOcr(image,bias),result=await worker.recognize(canvas),text=String(result.data.text||"").replace(/\r/g," ");
+      const uid=text.match(/UID\s*[:#]?\s*([A-Z0-9]{4,})/i)?.[1],sn=text.match(/SN\s*[:#]?\s*([A-Z0-9]{4,})/i)?.[1],rawMac=text.match(/MAC\s*[:#]?\s*([A-F0-9: -]{12,})/i)?.[1];
+      if(!found.uid&&uid)found.uid=uid;if(!found.sn&&sn)found.sn=sn;if(!found.mac&&rawMac)found.mac=normalizeMacValue(rawMac);
+      if(found.uid&&found.sn&&found.mac)return true;
+    }
+    return false;
+  };
+  // Fast path: most labels, photographed on their own, read cleanly straight off the full frame.
+  if(await runPasses(bitmap,[1]))return found;
+  // Retry the full frame at other exposure biases before trying anything more expensive.
+  if(await runPasses(bitmap,[1.2,.8]))return found;
+  // Last resort: crop to just the white label (helps when other printed text/labels are in the shot
+  // confusing layout analysis), then retry there at all three biases.
+  try{
+    const box=findLabelBoundingBox(bitmap),srcW=bitmap.width||bitmap.naturalWidth,srcH=bitmap.height||bitmap.naturalHeight;
+    if(box&&box.w>=srcW*.15&&box.h>=srcH*.06&&box.w<=srcW*.98){
+      const cropped=cropToBox(bitmap,box);
+      await runPasses(cropped,[1,1.2,.8]);
+    }
+  }catch{}
   return found;
 }finally{await worker?.terminate().catch(()=>{})}}
 function sellForm(id="") {
