@@ -168,7 +168,33 @@ $("#themeSelect").onchange=e=>{try{localStorage.setItem("vboxstock-theme",e.targ
 systemTheme.addEventListener?.("change",()=>{if(savedTheme()==="system")applyTheme("system")});
 $("#date").textContent=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
 async function scanLabelPhoto(form,help,file){let url;try{url=URL.createObjectURL(file);const {uid,sn,mac}=await extractIdsFromImageUrl(url);if(!form.elements.uid.value&&uid)form.elements.uid.value=uid;if(!form.elements.sn.value&&sn)form.elements.sn.value=sn;if(!form.elements.mac.value&&mac)form.elements.mac.value=mac;const count=[form.elements.uid.value,form.elements.sn.value,form.elements.mac.value].filter(Boolean).length;help.textContent=count?count+" of 3 identifiers read from the photo. Review the fields before adding the device.":"No identifiers were detected. Retake the photo with the full label in focus and good lighting."}catch(error){help.textContent="The photo could not be processed. Retake it in brighter light or enter the values manually."}finally{if(url)URL.revokeObjectURL(url)}}
-async function scanLabelLive(form,help){if(!navigator.mediaDevices?.getUserMedia){help.textContent="Camera access is unavailable. Use manual entry or enable camera access for this site.";return}let stream;try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});const video=document.createElement("video");video.autoplay=true;video.playsInline=true;video.srcObject=stream;const overlay=document.createElement("div");overlay.className="scanner-overlay";overlay.innerHTML='<div><strong>Frame the full label</strong><small>Hold steady, then capture a photo to read the identifiers.</small><button type="button" class="capture">Capture</button><button type="button" class="cancel">Cancel</button></div>';overlay.prepend(video);$("#modal").append(overlay);const finish=()=>{stream.getTracks().forEach(track=>track.stop());overlay.remove()};overlay.querySelector(".cancel").onclick=finish;await video.play();overlay.querySelector(".capture").onclick=async()=>{const captureBtn=overlay.querySelector(".capture");captureBtn.disabled=true;captureBtn.textContent="Reading…";const canvas=document.createElement("canvas");canvas.width=video.videoWidth;canvas.height=video.videoHeight;canvas.getContext("2d").drawImage(video,0,0);const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",.92));finish();if(blob)await scanLabelPhoto(form,help,blob);else help.textContent="Could not capture the frame. Try again or enter the values manually."}}catch(error){if(stream)stream.getTracks().forEach(track=>track.stop());help.textContent="Unable to access the camera. Enter the identifiers manually or check camera permissions."}}
+async function scanLabelLive(form,help){if(!navigator.mediaDevices?.getUserMedia){help.textContent="Camera access is unavailable. Use manual entry or enable camera access for this site.";return}let stream;try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});const video=document.createElement("video");video.autoplay=true;video.playsInline=true;video.srcObject=stream;const overlay=document.createElement("div");overlay.className="scanner-overlay";overlay.innerHTML='<div><strong>Frame the full label</strong><small class="scan-status">Hold steady, then capture a photo to read the identifiers.</small><div class="scan-live-actions"><button type="button" class="capture">Capture</button><button type="button" class="next" hidden>Confirm and scan next</button><button type="button" class="cancel">Done</button></div></div>';overlay.prepend(video);$("#modal").append(overlay);const statusEl=overlay.querySelector(".scan-status"),captureBtn=overlay.querySelector(".capture"),nextBtn=overlay.querySelector(".next"),doneBtn=overlay.querySelector(".cancel");const finish=()=>{stream.getTracks().forEach(track=>track.stop());overlay.remove()};doneBtn.onclick=finish;await video.play();
+    captureBtn.onclick=async()=>{
+      captureBtn.disabled=true;captureBtn.textContent="Reading…";statusEl.textContent="Reading the label…";nextBtn.hidden=true;
+      const canvas=document.createElement("canvas");canvas.width=video.videoWidth;canvas.height=video.videoHeight;canvas.getContext("2d").drawImage(video,0,0);
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",.92));
+      if(!blob){statusEl.textContent="Could not capture the frame. Try again.";captureBtn.disabled=false;captureBtn.textContent="Capture";return}
+      let ids={};const url=URL.createObjectURL(blob);
+      try{ids=await extractIdsFromImageUrl(url)}catch{}
+      URL.revokeObjectURL(url);
+      const before={uid:form.elements.uid.value,sn:form.elements.sn.value,mac:form.elements.mac.value};
+      if(!form.elements.uid.value&&ids.uid)form.elements.uid.value=ids.uid;
+      if(!form.elements.sn.value&&ids.sn)form.elements.sn.value=ids.sn;
+      if(!form.elements.mac.value&&ids.mac)form.elements.mac.value=ids.mac;
+      const filled=[form.elements.uid.value,form.elements.sn.value,form.elements.mac.value].filter(Boolean).length;
+      const gotNew=(!before.uid&&form.elements.uid.value)||(!before.sn&&form.elements.sn.value)||(!before.mac&&form.elements.mac.value);
+      help.textContent=filled?`${filled} of 3 identifiers read. Review the fields before adding the device.`:"No identifiers were detected. Retake the photo with the full label in focus and good lighting.";
+      if(filled===3)statusEl.textContent="Captured 3 of 3 identifiers. Confirm to add this device.";
+      else if(gotNew)statusEl.textContent=`Captured ${filled} of 3 identifiers so far. Capture again for a clearer read, or confirm to add what was found.`;
+      else statusEl.textContent="No identifiers were read from that frame. Try again with better lighting and focus, or hold the label closer.";
+      captureBtn.disabled=false;captureBtn.textContent="Capture again";nextBtn.hidden=filled===0;
+    };
+    nextBtn.onclick=()=>{
+      const addBtn=form.querySelector(".add-device");addBtn.click();
+      statusEl.textContent=help.textContent.startsWith("Device added")?"Device added. Frame the next label and capture.":help.textContent;
+      captureBtn.textContent="Capture";nextBtn.hidden=true;
+    };
+  }catch(error){if(stream)stream.getTracks().forEach(track=>track.stop());help.textContent="Unable to access the camera. Enter the identifiers manually or check camera permissions."}}
 const normalizeMacValue=value=>{const hex=String(value||"").replace(/[^0-9a-f]/gi,"").slice(0,12);return hex.length===12?(hex.match(/.{2}/g)||[]).join(":"):value};
 applyTheme();
 async function loadBuildInfo(){try{const response=await fetch("/api/health"),data=await response.json(),label=`v${data.appVersion}${data.buildSha&&data.buildSha!=="dev"?" · "+data.buildSha:""}`;document.querySelectorAll(".build-tag").forEach(el=>el.textContent=label)}catch{}}
