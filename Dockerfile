@@ -5,7 +5,7 @@ LABEL org.opencontainers.image.source="https://git.us2plus2.com/marvin/vboxstock
 LABEL org.opencontainers.image.revision="$GIT_SHA"
 LABEL org.opencontainers.image.description="Self-contained vSeeBox inventory and sales tracker"
 WORKDIR /app
-COPY package.json server.mjs ./
+COPY package.json server.mjs totp.mjs ./
 COPY public ./public
 COPY vboxstock-entrypoint.sh /usr/local/bin/vboxstock-entrypoint
 RUN apk add --no-cache su-exec \
